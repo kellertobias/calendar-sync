@@ -73,7 +73,7 @@ func fetchEvents(from calendarID: String, daysMinus: Int, daysPlus: Int, complet
     }
 }
 
-func fetchAndPushEvents(calendarId: String, apiUrl: String, daysMinus: Int, daysPlus: Int, completion: @escaping () -> Void) {
+func fetchAndPushEvents(calendarId: String, apiUrl: String, daysMinus: Int, daysPlus: Int, notifyOffset: Int?, completion: @escaping () -> Void) {
     fetchEvents(from: calendarId, daysMinus: daysMinus, daysPlus: daysPlus) { events, eventStore in
         if events == nil {
             print("Failed fetching Events")
@@ -85,6 +85,23 @@ func fetchAndPushEvents(calendarId: String, apiUrl: String, daysMinus: Int, days
 
         var mappedEvents = [[String: Any]]()
         for event in events! {
+            if notifyOffset != nil, let alarm = event.alarms?.first {
+                let currentNotificationOffset = alarm.relativeOffset
+                if currentNotificationOffset == -15 * 60 {
+                    print("Having Offset of 15 Minutes. Replacing with 5 Minutes.")
+                    let updatedAlarm = EKAlarm(relativeOffset: -1.0 * Double (notifyOffset!) * 60)
+                    event.removeAlarm(alarm)
+                    event.addAlarm(updatedAlarm)
+                    
+                    // Save the modified event back to the event store
+                    do {
+                        try eventStore.save(event, span: .thisEvent)
+                    } catch {
+                        print("Error saving modified event: \(error)")
+                    }
+                }
+            }
+            
             print("[COPY  ] - \(event.title ?? "")")
             
             mappedEvents.append(
@@ -103,14 +120,15 @@ func fetchAndPushEvents(calendarId: String, apiUrl: String, daysMinus: Int, days
         
         // Encode the array of objects to JSON data
         let urlString = apiUrl
-        print(mappedEvents)
-        makePOSTRequest(urlString: urlString, data: mappedEvents) { error in
-            if let error = error {
-                print("Error: \(error)")
-            } else {
-                print("Request successful")
+            print(mappedEvents)
+            makePOSTRequest(urlString: urlString, data: mappedEvents) { error in
+                if let error = error {
+                    print("Error: \(error)")
+                } else {
+                    print("Request successful")
+                }
             }
-        }
+        
         
         
         print("[COPY  ] All events copied to the target calendar.\n\n")
@@ -142,6 +160,7 @@ func main() {
     let apiUrl = ProcessInfo.processInfo.environment["API_URL"]
     let daysMinus = Int(ProcessInfo.processInfo.environment["DAYS_PAST"] ?? "") ?? 2
     let daysPlus = Int(ProcessInfo.processInfo.environment["DAYS_FUTURE"] ?? "") ?? 3
+    let notifyOffset = Int(ProcessInfo.processInfo.environment["NOTIFY"] ?? "") ?? 5
     
     print("Tobisk Calendar Copy")
     print("")
@@ -154,11 +173,13 @@ func main() {
         while !finished {
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 1))
         }
+        print("Full Usage:")
+        print("Usage: CALENDAR_ID='...' API_URL='...' DAYS_PAST=... DAYS_FUTURE=... NOTIFY=... calendar-sync")
         exit(0)
     }
     
     if apiUrl == nil || apiUrl == "" {
-        print("Usage: CALENDAR_ID='...' API_URL='...' DAYS_PAST=... DAYS_FUTURE=... calendar-sync")
+        print("Usage: CALENDAR_ID='...' API_URL='...' DAYS_PAST=... DAYS_FUTURE=... NOTIFY=... calendar-sync")
         exit(-1)
     }
     
@@ -168,7 +189,7 @@ func main() {
     // Add a delay to wait for access to calendars
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
         
-        fetchAndPushEvents(calendarId: calendarId!, apiUrl: apiUrl!, daysMinus: daysMinus, daysPlus: daysPlus) {
+        fetchAndPushEvents(calendarId: calendarId!, apiUrl: apiUrl!, daysMinus: daysMinus, daysPlus: daysPlus, notifyOffset: notifyOffset) {
             // This completion block will be called once the synchronization is done.
             finished = true // Set the flag to indicate the completion of the task.
         }
