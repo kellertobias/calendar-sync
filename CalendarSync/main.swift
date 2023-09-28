@@ -11,13 +11,19 @@ var finished = false
 
 func checkForEventAccess(andThen f:(()->())? = nil) {
     let status = EKEventStore.authorizationStatus(for:.event)
+    print(status.rawValue)
     switch status {
     case .authorized:
         print("[ACCESS] Already Authorized...")
         f?()
+        break
+    case .fullAccess:
+        print("[ACCESS] Already Authorized (Full Access)...")
+        f?()
+        break
     case .notDetermined:
         print("[ACCESS] Requesting Access...")
-        EKEventStore().requestAccess(to:.event) { ok, err in
+        EKEventStore().requestFullAccessToEvents() { ok, err in
             if ok {
                 print("[ACCESS] ...Granted")
                 DispatchQueue.main.async {
@@ -25,6 +31,27 @@ func checkForEventAccess(andThen f:(()->())? = nil) {
                 }
             }
         }
+        break
+    case .writeOnly:
+        print("[ACCESS] Write only. Elevating to full access...")
+            
+            // You need to prompt the user to upgrade to full access here.
+            // You can display a UI element (e.g., a dialog or alert) explaining
+            // the need for full access and providing an option for the user to upgrade.
+            // When the user chooses to upgrade, call the following method:
+
+            EKEventStore().requestFullAccessToEvents() { granted, error in
+                if granted {
+                    print("[ACCESS] Upgraded to Full Access")
+                    DispatchQueue.main.async {
+                        f?()
+                    }
+                } else if let error = error {
+                    // Handle the error, e.g., show an alert to inform the user
+                    print("[ACCESS] Error upgrading access: \(error.localizedDescription)")
+                }
+            }
+        break
     case .restricted:
         print("[ACCESS] Restricted...")
         // do nothing
@@ -35,7 +62,10 @@ func checkForEventAccess(andThen f:(()->())? = nil) {
         finished = true
         exit(1)
         break
-    @unknown default: fatalError()
+    default:
+    print("[ACCESS] Denied... Unknown Reason:")
+    print(status.rawValue)
+    fatalError()
     }
 }
 
