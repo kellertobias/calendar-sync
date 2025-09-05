@@ -1,0 +1,40 @@
+name: CalendarSync
+options:
+  bundleIdPrefix: com.example
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: 14.0
+    SWIFT_VERSION: 5.9
+targets:
+  CalendarSync:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources
+      - path: Resources
+    settings:
+      base:
+        INFOPLIST_FILE: Config/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.CalendarSync
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+    entitlements:
+      path: Config/CalendarSync.entitlements
+    scheme:
+      gatherCoverageData: true
+      testTargets:
+        - name: CalendarSyncTests
+  CalendarSyncTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: CalendarSync

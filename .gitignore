@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.moved-aside
+*.xcscmblueprint
+
+# SwiftPM
+.build/
+
+# Logs
+*.log
+
+# User-specific
+*.swp
+*.swo
+
+# App-specific
+CalendarSync.app/
+
+# Byproducts
+*.ipa
+*.dSYM
+
+# Other
+*.orig
+
+# VSCode
+.vscode/
