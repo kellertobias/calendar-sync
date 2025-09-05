@@ -84,6 +84,18 @@ enum FilterRuleType: String, Codable, CaseIterable, Identifiable {
     case onlyAccepted
     case acceptedOrMaybe
 
+    // Attendee count comparisons
+    case attendeesCountAbove
+    case attendeesCountBelow
+
+    // Repeating status
+    case isRepeating
+    case isNotRepeating
+
+    // Availability (busy/free)
+    case availabilityBusy
+    case availabilityFree
+
     case ignoreOtherTuples
 
     var id: String { rawValue }
@@ -120,6 +132,15 @@ enum FilterRuleType: String, Codable, CaseIterable, Identifiable {
 
         case .onlyAccepted: return "Only accepted"
         case .acceptedOrMaybe: return "Accepted or maybe"
+
+        case .attendeesCountAbove: return "Attendees count above"
+        case .attendeesCountBelow: return "Attendees count below"
+
+        case .isRepeating: return "Is a repeating event"
+        case .isNotRepeating: return "Is not a repeating event"
+
+        case .availabilityBusy: return "Availability is busy"
+        case .availabilityFree: return "Availability is free"
 
         case .ignoreOtherTuples: return "Ignore events from other tuples"
         }

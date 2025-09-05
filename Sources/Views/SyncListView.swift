@@ -129,10 +129,25 @@ struct SyncEditorView: View {
         let targetStart: Date
         let targetEnd: Date
         let included: Bool
+        // Extra details for popover
+        let sourceNotes: String
+        let repeats: Bool
+        let statusLabel: String
+        let attendeesCount: Int
+        let availabilityLabel: String
     }
     @State private var createPreviews: [PreviewPair] = []
     @State private var isLoadingPreview: Bool = false
     @State private var previewError: String? = nil
+    @State private var activePreview: PreviewPair? = nil
+    /// Background task that performs the heavy preview computation.
+    /// Why: Fetching events and building previews can be expensive; we offload to avoid blocking the UI thread.
+    @State private var previewComputeTask: Task<Void, Never>? = nil
+    /// Debounce task that delays firing `refreshPreview()` while the user is actively editing.
+    /// Why: Prevents running many expensive preview computations during rapid config changes.
+    @State private var refreshDebounceTask: Task<Void, Never>? = nil
+    /// Debounce interval for preview, in milliseconds. Tuned to feel responsive but not chatty.
+    private let previewDebounceMs: UInt64 = 350
 
     /// Shared date formatter for concise date-time display in preview.
     private static let previewDateFormatter: DateFormatter = {
@@ -143,7 +158,9 @@ struct SyncEditorView: View {
     }()
 
     var body: some View {
-        HStack(spacing: 16) {
+        // Align editor content to the top so the form starts at the same vertical origin as the preview.
+        // Why: Improves visual hierarchy and ensures the first field is immediately visible when adding a sync.
+        HStack(alignment: .top, spacing: 16) {
             // LEFT: Editor form
             Form {
             // Basic
@@ -201,27 +218,86 @@ struct SyncEditorView: View {
                 }
             }
 
+            // Lookahead (per-sync horizon override)
+            // Why: Allow a sync to look further ahead or closer in than the app default when
+            //      planning which future events to mirror. This writes to `horizonDaysOverride`,
+            //      which is an optional to indicate "use default" when nil.
+            Section(header: Text("Lookahead").padding(.top, 8).padding(.bottom, 4)) {
+                Toggle("Override lookahead", isOn: Binding(
+                    get: { sync.horizonDaysOverride != nil },
+                    set: { isOn in
+                        if isOn {
+                            // Initialize with a sane value: keep existing override if present,
+                            // otherwise seed with the app default. Enforce minimum of 1 day.
+                            sync.horizonDaysOverride = max(sync.horizonDaysOverride ?? appState.defaultHorizonDays, 1)
+                        } else {
+                            // Clearing the override falls back to the app default horizon.
+                            sync.horizonDaysOverride = nil
+                        }
+                    }
+                ))
+                .padding(.vertical, 4)
+
+                if sync.horizonDaysOverride != nil {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Custom horizon").frame(width: 120, alignment: .leading)
+                        Stepper(value: Binding(
+                            get: { sync.horizonDaysOverride ?? appState.defaultHorizonDays },
+                            set: { newVal in sync.horizonDaysOverride = newVal }
+                        ), in: 1...365) {
+                            Text("\(sync.horizonDaysOverride ?? appState.defaultHorizonDays) days")
+                        }
+                        .frame(width: 220, alignment: .leading)
+                        Spacer()
+                    }
+                    Text("How far into the future to look when planning this sync. Leave off to use the app default (\(appState.defaultHorizonDays) days).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Using app default: \(appState.defaultHorizonDays) days.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Filters
+            // Why: After a filter is added via the "Add Filter" menu, the attribute cannot be changed inline.
+            //      Users adjust only the operator (appropriate to that attribute) and the value.
+            //      Layout: Title row (attribute + delete), Operator row (picker), Value row (input), divider.
             Section(header: Text("Filters").padding(.top, 8).padding(.bottom, 4)) {
                 ForEach($sync.filters) { $rule in
-                    HStack {
-                        Picker("", selection: $rule.type) {
-                            ForEach(FilterRuleType.allCases) { t in Text(t.label).tag(t) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Title row: Attribute summary (immutable) + delete button on the right.
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("Title: Filter for Attribute \(attributeDisplayName(for: group(for: rule.type)))")
+                            Spacer()
+                            Button(role: .destructive) { removeRule(rule.id) } label: { Image(systemName: "trash") }
                         }
-                        .labelsHidden()
-                        .frame(width: 260, alignment: .leading)
-                        // Pattern input where applicable
-                        if rule.type != .ignoreOtherTuples && rule.type != .includeAllDay && rule.type != .excludeAllDay && rule.type != .onlyAccepted && rule.type != .acceptedOrMaybe {
-                            TextField("Pattern", text: $rule.pattern)
-                            // Case-sensitive only for textual filters
-                            if rule.type != .durationLongerThan && rule.type != .durationShorterThan {
-                                Toggle("Case-sensitive", isOn: $rule.caseSensitive)
+
+                        // Operator row: Operators permitted for this attribute.
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("Operator").frame(width: 120, alignment: .leading)
+                            Picker("Operator", selection: $rule.type) {
+                                ForEach(operatorChoices(for: group(for: rule.type))) { choice in
+                                    Text(operatorLabel(for: choice)).tag(choice)
+                                }
                             }
-                        } else {
+                            .labelsHidden()
+                            .frame(width: 260, alignment: .leading)
                             Spacer()
                         }
-                        Button(role: .destructive) { removeRule(rule.id) } label: { Image(systemName: "trash") }
+
+                        // Value row: Visible only if this operator requires a value.
+                        if requiresValue(rule.type) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("Value").frame(width: 120, alignment: .leading)
+                                TextField(valuePlaceholder(for: rule.type), text: $rule.pattern)
+                                Spacer()
+                            }
+                        }
+                        Divider()
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
                 }
                 HStack {
                     Menu("Add Filter") {
@@ -237,6 +313,9 @@ struct SyncEditorView: View {
                         Menu("Attendees") {
                             Button("Includes") { addRule(.includeAttendee) }
                             Button("Does not include") { addRule(.excludeAttendee) }
+                            Divider()
+                            Button("Count above…") { addRule(.attendeesCountAbove) }
+                            Button("Count below…") { addRule(.attendeesCountBelow) }
                         }
                         Menu("Duration") {
                             Button("Longer than… (minutes)") { addRule(.durationLongerThan) }
@@ -248,6 +327,14 @@ struct SyncEditorView: View {
                         Menu("Status") {
                             Button("Only accepted") { addRule(.onlyAccepted) }
                             Button("Accepted or maybe") { addRule(.acceptedOrMaybe) }
+                        }
+                        Menu("Availability") {
+                            Button("Busy") { addRule(.availabilityBusy) }
+                            Button("Free") { addRule(.availabilityFree) }
+                        }
+                        Menu("Repeating") {
+                            Button("Is repeating") { addRule(.isRepeating) }
+                            Button("Is not repeating") { addRule(.isNotRepeating) }
                         }
                         Menu("Synced items") {
                             Button("Exclude items from other syncs") { addRule(.ignoreOtherTuples) }
@@ -332,6 +419,44 @@ struct SyncEditorView: View {
                                     Divider()
                                 }
                                 .opacity(pair.included ? 1.0 : 0.4)
+                                .contentShape(Rectangle())
+                                .onTapGesture { activePreview = pair }
+                                // Attach the popover to each row so it anchors above/below the clicked item,
+                                // not to the container (which can place it at the side).
+                                .popover(
+                                    item: Binding(
+                                        get: { activePreview?.id == pair.id ? activePreview : nil },
+                                        set: { newValue in if newValue == nil { activePreview = nil } }
+                                    ),
+                                    attachmentAnchor: .rect(.bounds),
+                                    arrowEdge: .top
+                                ) { item in
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(item.sourceTitle.isEmpty ? "(No title)" : item.sourceTitle)
+                                            .font(.headline)
+                                        if !item.sourceNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            Text(item.sourceNotes)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(6)
+                                        }
+                                        Divider()
+                                        Label { Text("Start: \(Self.previewDateFormatter.string(from: item.sourceStart))") } icon: { Image(systemName: "calendar") }
+                                            .font(.caption)
+                                        Label { Text("End: \(Self.previewDateFormatter.string(from: item.sourceEnd))") } icon: { Image(systemName: "calendar") }
+                                            .font(.caption)
+                                        Label { Text("Repeats: \(item.repeats ? "Yes" : "No")") } icon: { Image(systemName: item.repeats ? "arrow.triangle.2.circlepath" : "minus") }
+                                            .font(.caption)
+                                        Label { Text("Status: \(item.statusLabel)") } icon: { Image(systemName: "person.crop.circle.badge.checkmark") }
+                                            .font(.caption)
+                                        Label { Text("Attendees: \(item.attendeesCount)") } icon: { Image(systemName: "person.2") }
+                                            .font(.caption)
+                                        Label { Text("Availability: \(item.availabilityLabel)") } icon: { Image(systemName: "clock") }
+                                            .font(.caption)
+                                    }
+                                    .padding(12)
+                                    .frame(minWidth: 320, maxWidth: 400)
+                                }
                             }
                         }
                         .padding(.vertical, 4)
@@ -343,6 +468,8 @@ struct SyncEditorView: View {
             .frame(minWidth: 380, maxWidth: .infinity, minHeight: 420, alignment: .topLeading)
             .padding()
         }
+        // Add subtle top spacing so the editor content does not feel cramped against the sheet/window chrome.
+        .padding(.top, 12)
         // Keep calendar options in sync when permission changes without requiring app restart.
         .onChange(of: auth.status) { _, _ in
             calendars.reload(authorized: auth.hasReadAccess)
@@ -351,14 +478,14 @@ struct SyncEditorView: View {
         }
         .onAppear { refreshPreview() }
         // Refresh preview on key edits that influence the plan.
-        .onChange(of: sync.sourceCalendarId) { _, _ in refreshPreview() }
-        .onChange(of: sync.targetCalendarId) { _, _ in refreshPreview() }
-        .onChange(of: sync.mode) { _, _ in refreshPreview() }
-        .onChange(of: sync.blockerTitleTemplate) { _, _ in refreshPreview() }
-        .onChange(of: sync.horizonDaysOverride) { _, _ in refreshPreview() }
-        .onChange(of: appState.defaultHorizonDays) { _, _ in refreshPreview() }
-        .onChange(of: sync.filters) { _, _ in refreshPreview() }
-        .onChange(of: sync.timeWindows) { _, _ in refreshPreview() }
+        .onChange(of: sync.sourceCalendarId) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: sync.targetCalendarId) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: sync.mode) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: sync.blockerTitleTemplate) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: sync.horizonDaysOverride) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: appState.defaultHorizonDays) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: sync.filters) { _, _ in schedulePreviewRefreshDebounced() }
+        .onChange(of: sync.timeWindows) { _, _ in schedulePreviewRefreshDebounced() }
     }
 
     private func addRule(_ type: FilterRuleType) {
@@ -393,93 +520,152 @@ struct SyncEditorView: View {
         .foregroundStyle(.secondary)
     }
 
+    /// Schedules a debounced preview refresh after a short delay, cancelling any in-flight debounce.
+    /// How: Uses a `Task` that sleeps for `previewDebounceMs` and then invokes `refreshPreview()`.
+    ///      Subsequent calls cancel the prior task to ensure only the last edit triggers a refresh.
+    private func schedulePreviewRefreshDebounced() {
+        refreshDebounceTask?.cancel()
+        refreshDebounceTask = Task { @MainActor in
+            // Sleep uses nanoseconds; convert ms → ns.
+            try? await Task.sleep(nanoseconds: previewDebounceMs * 1_000_000)
+            if Task.isCancelled { return }
+            refreshPreview()
+        }
+    }
+
     /// Computes a non-destructive, comprehensive preview of source events in horizon.
-    /// How: Reads from EventKit directly; applies `SyncRules` to determine inclusion, and computes
-    ///      the would-be target fields (title and times) for display. Excluded items are shown at 40% opacity.
+    /// How: Offloads EventKit reads and rules application to a background task, then publishes
+    ///      UI-friendly pairs back on the main thread. Excluded items are shown at 40% opacity.
     private func refreshPreview() {
         createPreviews.removeAll()
         previewError = nil
-        guard !isPreviewDisabled else { return }
+        // Always cancel any ongoing compute before deciding whether to proceed.
+        previewComputeTask?.cancel()
+        // If disabled (e.g., missing permissions or invalid selection), stop here with no spinner.
+        guard !isPreviewDisabled else {
+            isLoadingPreview = false
+            return
+        }
         isLoadingPreview = true
-        defer { isLoadingPreview = false }
 
-        let store = EKEventStore()
-        let horizonDays = sync.horizonDaysOverride ?? appState.defaultHorizonDays
-        let windowStart = Date()
-        let windowEnd = Date().addingTimeInterval(TimeInterval(horizonDays * 24 * 3600))
-        guard let sourceCal = store.calendar(withIdentifier: sync.sourceCalendarId) else { return }
+        // Snapshot inputs for thread-safety and determinism across the async boundary.
+        let syncSnapshot = sync
+        let defaultHorizonDays = appState.defaultHorizonDays
 
-        // Fetch source events within the planning window
-        let sourcePredicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: [sourceCal])
-        let sourceEvents = store.events(matching: sourcePredicate)
+        previewComputeTask = Task.detached(priority: .userInitiated) { [syncSnapshot, defaultHorizonDays] in
+            if Task.isCancelled { return }
 
-        // Sort by start ascending for stable UI
-        let sorted = sourceEvents.sorted { (a, b) in
-            let aS = a.startDate ?? .distantPast
-            let bS = b.startDate ?? .distantPast
-            return aS < bS
-        }
-
-        var pairs: [PreviewPair] = []
-        for ev in sorted {
-            let title = ev.title ?? ""
-            let start = ev.startDate ?? Date()
-            let end = ev.endDate ?? start
-            let organizerName = ev.organizer?.name ?? ev.organizer?.url.absoluteString
-            let attendees: [String] = (ev.attendees ?? []).compactMap { $0.name ?? $0.url.absoluteString }
-            let durationMinutes: Int? = {
-                guard let s = ev.startDate, let e = ev.endDate else { return nil }
-                return max(0, Int(e.timeIntervalSince(s) / 60.0))
-            }()
-            let isAllDay = ev.isAllDay
-            let isStatusConfirmed: Bool
-            let isStatusTentative: Bool
-            switch ev.status {
-            case .confirmed: isStatusConfirmed = true; isStatusTentative = false
-            case .tentative: isStatusConfirmed = false; isStatusTentative = true
-            default: isStatusConfirmed = false; isStatusTentative = false
+            let store = EKEventStore()
+            let horizonDays = syncSnapshot.horizonDaysOverride ?? defaultHorizonDays
+            let windowStart = Date()
+            let windowEnd = Date().addingTimeInterval(TimeInterval(horizonDays * 24 * 3600))
+            guard let sourceCal = store.calendar(withIdentifier: syncSnapshot.sourceCalendarId) else {
+                await MainActor.run { isLoadingPreview = false }
+                return
             }
 
-            let passes = SyncRules.passesFilters(
-                title: title,
-                location: ev.location,
-                notes: ev.notes,
-                organizer: organizerName,
-                attendees: attendees,
-                durationMinutes: durationMinutes,
-                isAllDay: isAllDay,
-                isStatusConfirmed: isStatusConfirmed,
-                isStatusTentative: isStatusTentative,
-                filters: sync.filters,
-                sourceNotes: ev.notes,
-                sourceURLString: ev.url?.absoluteString,
-                configId: sync.id
-            )
-            let allowed = SyncRules.allowedByTimeWindows(start: ev.startDate, isAllDay: isAllDay, windows: sync.timeWindows)
-            let included = passes && allowed
+            // Fetch source events within the planning window
+            let sourcePredicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: [sourceCal])
+            let sourceEvents = store.events(matching: sourcePredicate)
 
-            let targetTitle: String
-            switch sync.mode {
-            case .full:
-                targetTitle = title
-            case .blocker:
-                let template = (sync.blockerTitleTemplate ?? "Busy")
-                targetTitle = template.replacingOccurrences(of: "{sourceTitle}", with: title)
+            if Task.isCancelled { return }
+
+            // Sort by start ascending for stable UI
+            let sorted = sourceEvents.sorted { (a, b) in
+                let aS = a.startDate ?? .distantPast
+                let bS = b.startDate ?? .distantPast
+                return aS < bS
             }
 
-            let id = "\(start.timeIntervalSince1970)-\(end.timeIntervalSince1970)-\(title)-\(pairs.count)"
-            pairs.append(PreviewPair(
-                id: id,
-                sourceTitle: title,
-                sourceStart: start,
-                sourceEnd: end,
-                targetTitle: targetTitle,
-                targetStart: start,
-                targetEnd: end,
-                included: included
-            ))
+            var pairs: [PreviewPair] = []
+            pairs.reserveCapacity(sorted.count)
+            for ev in sorted {
+                if Task.isCancelled { return }
+                let title = ev.title ?? ""
+                let start = ev.startDate ?? Date()
+                let end = ev.endDate ?? start
+                let organizerName = ev.organizer?.name ?? ev.organizer?.url.absoluteString
+                let attendees: [String] = (ev.attendees ?? []).compactMap { $0.name ?? $0.url.absoluteString }
+                let durationMinutes: Int? = {
+                    guard let s = ev.startDate, let e = ev.endDate else { return nil }
+                    return max(0, Int(e.timeIntervalSince(s) / 60.0))
+                }()
+                let isAllDay = ev.isAllDay
+                let isStatusConfirmed: Bool
+                let isStatusTentative: Bool
+                switch ev.status {
+                case .confirmed: isStatusConfirmed = true; isStatusTentative = false
+                case .tentative: isStatusConfirmed = false; isStatusTentative = true
+                default: isStatusConfirmed = false; isStatusTentative = false
+                }
+
+                let passes = SyncRules.passesFilters(
+                    title: title,
+                    location: ev.location,
+                    notes: ev.notes,
+                    organizer: organizerName,
+                    attendees: attendees,
+                    durationMinutes: durationMinutes,
+                    isAllDay: isAllDay,
+                    isStatusConfirmed: isStatusConfirmed,
+                    isStatusTentative: isStatusTentative,
+                    filters: syncSnapshot.filters,
+                    sourceNotes: ev.notes,
+                    sourceURLString: ev.url?.absoluteString,
+                    configId: syncSnapshot.id
+                )
+                let allowed = SyncRules.allowedByTimeWindows(start: ev.startDate, isAllDay: isAllDay, windows: syncSnapshot.timeWindows)
+                let included = passes && allowed
+
+                let targetTitle: String
+                switch syncSnapshot.mode {
+                case .full:
+                    targetTitle = title
+                case .blocker:
+                    let template = (syncSnapshot.blockerTitleTemplate ?? "Busy")
+                    targetTitle = template.replacingOccurrences(of: "{sourceTitle}", with: title)
+                }
+
+                let id = "\(start.timeIntervalSince1970)-\(end.timeIntervalSince1970)-\(title)-\(pairs.count)"
+                let availabilityLabel: String = {
+                    switch ev.availability {
+                    case .busy: return "Busy"
+                    case .free: return "Free"
+                    case .tentative: return "Tentative"
+                    case .unavailable: return "Unavailable"
+                    default: return "Not set"
+                    }
+                }()
+                pairs.append(PreviewPair(
+                    id: id,
+                    sourceTitle: title,
+                    sourceStart: start,
+                    sourceEnd: end,
+                    targetTitle: targetTitle,
+                    targetStart: start,
+                    targetEnd: end,
+                    included: included,
+                    sourceNotes: ev.notes ?? "",
+                    repeats: ev.hasRecurrenceRules,
+                    statusLabel: {
+                        switch ev.status {
+                        case .confirmed: return "Accepted"
+                        case .tentative: return "Maybe"
+                        case .canceled: return "Declined"
+                        default: return "Unknown"
+                        }
+                    }(),
+                    attendeesCount: ev.attendees?.count ?? 0,
+                    availabilityLabel: availabilityLabel
+                ))
+            }
+
+            await MainActor.run {
+                if Task.isCancelled { return }
+                createPreviews = pairs
+                isLoadingPreview = false
+            }
         }
-        createPreviews = pairs
     }
 }
 

@@ -142,6 +142,13 @@ final class SyncEngine {
             let status = ev.status
             let isConfirmed = status == .confirmed
             let isTentative = status == .tentative
+            // Availability: treat .busy as busy; .free as free. Other states (tentative) considered busy for filtering purposes.
+            let availabilityBusy: Bool = {
+                switch ev.availability {
+                case .free: return false
+                default: return true
+                }
+            }()
 
             return SyncRules.passesFilters(
                 title: ev.title ?? "",
@@ -153,6 +160,9 @@ final class SyncEngine {
                 isAllDay: ev.isAllDay,
                 isStatusConfirmed: isConfirmed,
                 isStatusTentative: isTentative,
+                attendeesCount: ev.attendees?.count ?? 0,
+                isRepeating: ev.hasRecurrenceRules,
+                isAvailabilityBusy: availabilityBusy,
                 filters: config.filters,
                 sourceNotes: ev.notes,
                 sourceURLString: ev.url?.absoluteString,

@@ -87,6 +87,9 @@ enum SyncRules {
         isAllDay: Bool = false,
         isStatusConfirmed: Bool = false,
         isStatusTentative: Bool = false,
+        attendeesCount: Int = 0,
+        isRepeating: Bool = false,
+        isAvailabilityBusy: Bool = true,
         filters: [FilterRuleUI],
         sourceNotes: String?,
         sourceURLString: String?,
@@ -160,6 +163,25 @@ enum SyncRules {
                 if !isStatusConfirmed { return false }
             case .acceptedOrMaybe:
                 if !(isStatusConfirmed || isStatusTentative) { return false }
+
+            case .attendeesCountAbove:
+                if let threshold = Int(rule.pattern.trimmingCharacters(in: .whitespaces)) {
+                    if attendeesCount <= threshold { return false }
+                }
+            case .attendeesCountBelow:
+                if let threshold = Int(rule.pattern.trimmingCharacters(in: .whitespaces)) {
+                    if attendeesCount >= threshold { return false }
+                }
+
+            case .isRepeating:
+                if !isRepeating { return false }
+            case .isNotRepeating:
+                if isRepeating { return false }
+
+            case .availabilityBusy:
+                if !isAvailabilityBusy { return false }
+            case .availabilityFree:
+                if isAvailabilityBusy { return false }
 
             case .ignoreOtherTuples:
                 if let tag = extractMarker(notes: sourceNotes, urlString: sourceURLString), tag.tuple != configId.uuidString {
