@@ -303,14 +303,14 @@ struct SyncEditorView: View {
         //      planning which future events to mirror. This writes to `horizonDaysOverride`,
         //      which is an optional to indicate "use default" when nil.
         Section(header: sectionHeader("Lookahead").padding(.top, 24).padding(.bottom, 4)) {
-          // Layout: Place the field label above the controls to avoid Form's label column
-          // pushing the label to the left of the section title. This matches the layout
-          // we use for other vertically labeled fields (e.g., Name, calendar pickers).
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Override lookahead").padding(.horizontal, fieldLabelLeading / 2)
+          // Layout: Two explicit rows for clarity and alignment.
+          // Row 1: Standard checkbox with label to the right (Toggle manages layout).
+          // Row 2: Days label on the left; Stepper aligned to the right when override is enabled.
+          VStack(alignment: .leading, spacing: 6) {
+            // Row 1 — Override toggle
             HStack(alignment: .firstTextBaseline) {
               Toggle(
-                "",
+                "Override lookahead",
                 isOn: Binding(
                   get: { sync.horizonDaysOverride != nil },
                   set: { isOn in
@@ -326,26 +326,30 @@ struct SyncEditorView: View {
                   }
                 )
               )
-              .labelsHidden()
               .padding(.vertical, 4)
+              Spacer()
+            }
+            .padding(.leading, fieldLabelLeading)
+
+            // Row 2 — Value row
+            HStack(alignment: .firstTextBaseline) {
+              let days = sync.horizonDaysOverride ?? appState.defaultHorizonDays
+              Text("\(days) days")
+                .foregroundStyle(sync.horizonDaysOverride == nil ? .secondary : .primary)
+              Spacer()
               if sync.horizonDaysOverride != nil {
                 Stepper(
+                  "",
                   value: Binding(
                     get: { sync.horizonDaysOverride ?? appState.defaultHorizonDays },
                     set: { newVal in sync.horizonDaysOverride = newVal }
                   ), in: 1...365
-                ) {
-                  Text("\(sync.horizonDaysOverride ?? appState.defaultHorizonDays) days")
-                }
-                .frame(width: 220, alignment: .trailing)
-              } else {
-                Text("\(appState.defaultHorizonDays) days")
-                  .foregroundStyle(.secondary)
+                )
+                .labelsHidden()
               }
-              Spacer()
             }
+            .padding(.leading, fieldLabelLeading)
           }
-          .padding(.leading, fieldLabelLeading)
           Text(
             "How far into the future to look when planning this sync. Leave off to use the app default."
           )
