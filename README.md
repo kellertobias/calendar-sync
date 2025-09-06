@@ -1,6 +1,8 @@
-# Calendar Sync (macOS Menu Bar)
+<p align="center">
+  <img src="/docs/header.png" alt="Calendar Sync" />
+</p>
 
-![Calendar Sync](/docs/header.png)
+# Calendar Sync for macOS
 
 I had the issue that I am using google calendar for my personal calendar while needing to keep my work calendar in a microsoft account up to date. This little Vibe coded app does the job for me.
 
