@@ -10,6 +10,10 @@ It is a macOS menu bar app, that uses the calendar framework to sync events betw
 
 Feel free to clone the code and build it after installing xcode and running the `./build.sh` script.
 
+<p align="center">
+  <img src="/docs/example.png" alt="Calendar Sync Settings" />
+</p>
+
 ## Features
 
 - One-way sync from source → target calendar

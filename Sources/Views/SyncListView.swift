@@ -317,13 +317,12 @@ struct SyncEditorView: View {
         //      Layout: Title row (attribute + delete), Operator row (picker), Value row (input), divider.
         Section(header: sectionHeader("Filters").padding(.top, 24).padding(.bottom, 4)) {
           VStack(alignment: .leading, spacing: 8) {
-
             ForEach($sync.filters) { $rule in
-              VStack(alignment: .leading, spacing: 6) {
+              VStack(alignment: .leading, spacing: 12) {
                 // Title row: Attribute summary (immutable) + delete button on the right.
                 HStack(alignment: .firstTextBaseline) {
                   Text(
-                    "Title: Filter for Attribute \(attributeDisplayName(for: group(for: rule.type)))"
+                    "Filter \"\(attributeDisplayName(for: group(for: rule.type)))\""
                   )
                   Spacer()
                   Button(role: .destructive) {
@@ -347,18 +346,17 @@ struct SyncEditorView: View {
                 }
 
                 // Value row: keep the row in the layout to avoid reflow when switching operators.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                  Text("Value").frame(width: 120, alignment: .leading)
-                  if requiresValue(rule.type) {
+                if requiresValue(rule.type) {
+                  HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Value").frame(width: 120, alignment: .leading)
+                    // Use labelsHidden() to maintain consistent layout without visible label
                     TextField(valuePlaceholder(for: rule.type), text: $rule.pattern)
-                  } else {
-                    // Preserve layout height while visually hiding the input when not needed.
-                    TextField("", text: .constant(""))
-                      .disabled(true)
-                      .opacity(0)
+                      .labelsHidden()
+                      .padding(.vertical, 4)
                   }
                   Spacer()
                 }
+
                 Divider()
               }
               .padding(.vertical, 6)
