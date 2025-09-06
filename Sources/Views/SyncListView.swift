@@ -490,7 +490,10 @@ struct SyncEditorView: View {
             VStack(alignment: .leading, spacing: 12) {
               ForEach(createPreviews) { pair in
                 VStack(alignment: .leading, spacing: 6) {
-                  HStack(alignment: .top) {
+                  // Keep preview source and target columns at identical widths for easy comparison.
+                  // How: Make both column VStacks flexible with maxWidth: .infinity inside an HStack
+                  // so the layout engine distributes the available width equally between them.
+                  HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
                       Text("Original")
                         .font(.caption)
@@ -504,7 +507,7 @@ struct SyncEditorView: View {
                       .font(.caption)
                       .foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 2) {
                       Text("Would create")
                         .font(.caption)
@@ -518,6 +521,7 @@ struct SyncEditorView: View {
                       .font(.caption)
                       .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                   }
                   Divider()
                 }
@@ -738,6 +742,15 @@ struct SyncEditorView: View {
           isStatusTentative = false
         }
 
+        // Derive availability for filtering purposes: only `.free` is free; all others are busy.
+        let isAvailabilityBusy: Bool = {
+          switch ev.availability {
+          case .free: return false
+          default: return true
+          }
+        }()
+
+        // Apply filters with complete context, including attendee count, repeating and availability.
         let passes = SyncRules.passesFilters(
           title: title,
           location: ev.location,
@@ -748,6 +761,9 @@ struct SyncEditorView: View {
           isAllDay: isAllDay,
           isStatusConfirmed: isStatusConfirmed,
           isStatusTentative: isStatusTentative,
+          attendeesCount: ev.attendees?.count ?? 0,
+          isRepeating: ev.hasRecurrenceRules,
+          isAvailabilityBusy: isAvailabilityBusy,
           filters: syncSnapshot.filters,
           sourceNotes: ev.notes,
           sourceURLString: ev.url?.absoluteString,
