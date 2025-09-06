@@ -8,7 +8,9 @@ I had the issue that I am using google calendar for my personal calendar while n
 
 It is a macOS menu bar app, that uses the calendar framework to sync events between multiple calendars. You can setup multiple syncs, with different filters and time windows.
 
-Feel free to clone the code and build it after installing xcode and running the `./build.sh` script.
+Feel free to clone the code and build it after installing xcode and running the `./build.sh` script or download the latest release from the [releases page](https://github.com/kellerh/calendar-sync/releases).
+
+This app is vibe-coded - use at your own risk.
 
 <p align="center">
   <img src="/docs/example.png" alt="Calendar Sync Settings" />
