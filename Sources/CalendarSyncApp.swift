@@ -128,6 +128,8 @@ struct CalendarSyncApp: App {
     WindowGroup("Logs", id: "logs") {
       LogsView()
         .environmentObject(appState)
+        // Provide model container so LogsView's SwiftData query can fetch persisted logs.
+        .modelContainer(persistence.container)
     }
   }
 

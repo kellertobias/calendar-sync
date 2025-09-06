@@ -29,8 +29,10 @@ struct SyncListView: View {
       List(appState.syncs, selection: $selection) { sync in
         HStack {
           VStack(alignment: .leading) {
-            Text(sync.name)
-            Text(sync.mode == .blocker ? "Blocker-only" : "Full info")
+            // Primary row label: show Source → Target calendar names for quick context scanning.
+            // Why: The sidebar should emphasize which calendars are being synced rather than the custom name.
+            Text(calendarPairSummary(for: sync))
+            Text(modeSummary(sync.mode))
               .font(.caption)
               .foregroundStyle(.secondary)
           }
@@ -115,11 +117,42 @@ struct SyncListView: View {
     }
   }
 
+  /// Maps a `SyncMode` to a concise, user-facing summary label for list rows.
+  /// - Why: Keep row presentation logic centralized; avoids duplicating strings across views.
+  private func modeSummary(_ mode: SyncMode) -> String {
+    switch mode {
+    case .full: return "Full info"
+    case .privateEvents: return "Private events"
+    case .blocker: return "Blocker-only"
+    }
+  }
+
   private func binding(for sync: SyncConfigUI) -> Binding<SyncConfigUI> {
     guard let idx = appState.syncs.firstIndex(of: sync) else {
       return .constant(sync)
     }
     return $appState.syncs[idx]
+  }
+
+  /// Resolve a human-friendly calendar name for a given calendar identifier.
+  /// - Why: List rows should show readable names; fall back to a neutral placeholder when not selected.
+  /// - Parameter id: EventKit calendar identifier string.
+  /// - Returns: The calendar's display name, or "Select…" if not found/empty.
+  private func calendarDisplayName(for id: String) -> String {
+    guard !id.isEmpty, let option = appState.availableCalendars.first(where: { $0.id == id }) else {
+      return "Select…"
+    }
+    return option.name
+  }
+
+  /// Build a concise "Source → Target" label for a sync config row using calendar names.
+  /// - Why: Quickly communicates the mapping at a glance in the sidebar list.
+  /// - Parameter sync: The UI sync configuration model.
+  /// - Returns: A string like "Work → Personal" with placeholders when missing.
+  private func calendarPairSummary(for sync: SyncConfigUI) -> String {
+    let sourceName = calendarDisplayName(for: sync.sourceCalendarId)
+    let targetName = calendarDisplayName(for: sync.targetCalendarId)
+    return "\(sourceName) → \(targetName)"
   }
 }
 
@@ -237,6 +270,7 @@ struct SyncEditorView: View {
           // Hide the inline "Mode" label for a cleaner look under the section heading.
           Picker("", selection: $sync.mode) {
             Text("Full info").tag(SyncMode.full)
+            Text("Private events").tag(SyncMode.privateEvents)
             Text("Blocker-only").tag(SyncMode.blocker)
           }
           .labelsHidden()
@@ -269,41 +303,49 @@ struct SyncEditorView: View {
         //      planning which future events to mirror. This writes to `horizonDaysOverride`,
         //      which is an optional to indicate "use default" when nil.
         Section(header: sectionHeader("Lookahead").padding(.top, 24).padding(.bottom, 4)) {
-          HStack(alignment: .firstTextBaseline) {
-            Toggle(
-              "Override lookahead",
-              isOn: Binding(
-                get: { sync.horizonDaysOverride != nil },
-                set: { isOn in
-                  if isOn {
-                    // Initialize with a sane value: keep existing override if present,
-                    // otherwise seed with the app default. Enforce minimum of 1 day.
-                    sync.horizonDaysOverride = max(
-                      sync.horizonDaysOverride ?? appState.defaultHorizonDays, 1)
-                  } else {
-                    // Clearing the override falls back to the app default horizon.
-                    sync.horizonDaysOverride = nil
+          // Layout: Place the field label above the controls to avoid Form's label column
+          // pushing the label to the left of the section title. This matches the layout
+          // we use for other vertically labeled fields (e.g., Name, calendar pickers).
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Override lookahead").padding(.horizontal, fieldLabelLeading / 2)
+            HStack(alignment: .firstTextBaseline) {
+              Toggle(
+                "",
+                isOn: Binding(
+                  get: { sync.horizonDaysOverride != nil },
+                  set: { isOn in
+                    if isOn {
+                      // Initialize with a sane value: keep existing override if present,
+                      // otherwise seed with the app default. Enforce minimum of 1 day.
+                      sync.horizonDaysOverride = max(
+                        sync.horizonDaysOverride ?? appState.defaultHorizonDays, 1)
+                    } else {
+                      // Clearing the override falls back to the app default horizon.
+                      sync.horizonDaysOverride = nil
+                    }
                   }
-                }
+                )
               )
-            )
-            .padding(.vertical, 4)
-            if sync.horizonDaysOverride != nil {
-              Stepper(
-                value: Binding(
-                  get: { sync.horizonDaysOverride ?? appState.defaultHorizonDays },
-                  set: { newVal in sync.horizonDaysOverride = newVal }
-                ), in: 1...365
-              ) {
-                Text("\(sync.horizonDaysOverride ?? appState.defaultHorizonDays) days")
+              .labelsHidden()
+              .padding(.vertical, 4)
+              if sync.horizonDaysOverride != nil {
+                Stepper(
+                  value: Binding(
+                    get: { sync.horizonDaysOverride ?? appState.defaultHorizonDays },
+                    set: { newVal in sync.horizonDaysOverride = newVal }
+                  ), in: 1...365
+                ) {
+                  Text("\(sync.horizonDaysOverride ?? appState.defaultHorizonDays) days")
+                }
+                .frame(width: 220, alignment: .trailing)
+              } else {
+                Text("\(appState.defaultHorizonDays) days")
+                  .foregroundStyle(.secondary)
               }
-              .frame(width: 220, alignment: .leading)
-            } else {
-              Text("\(appState.defaultHorizonDays) days")
-                .foregroundStyle(.secondary)
+              Spacer()
             }
-            Spacer()
           }
+          .padding(.leading, fieldLabelLeading)
           Text(
             "How far into the future to look when planning this sync. Leave off to use the app default."
           )
@@ -385,11 +427,9 @@ struct SyncEditorView: View {
                   Divider()
                   Button("Include all-day events") { addRule(.includeAllDay) }
                   Button("Exclude all-day events") { addRule(.excludeAllDay) }
+                  Button("Exclude all-day events when free") { addRule(.excludeAllDayWhenFree) }
                 }
-                Menu("Status") {
-                  Button("Only accepted") { addRule(.onlyAccepted) }
-                  Button("Accepted or maybe") { addRule(.acceptedOrMaybe) }
-                }
+                // Status filtering removed
                 Menu("Availability") {
                   Button("Busy") { addRule(.availabilityBusy) }
                   Button("Free") { addRule(.availabilityFree) }
@@ -728,18 +768,47 @@ struct SyncEditorView: View {
           return max(0, Int(e.timeIntervalSince(s) / 60.0))
         }()
         let isAllDay = ev.isAllDay
+        // Determine the user's participation status when available; fallback to event status.
+        // Why: Users expect "Only accepted" / "Accepted or Tentative" to reflect their RSVP.
+        let selfParticipantStatus: EKParticipantStatus? = (ev.attendees ?? []).first(where: {
+          $0.isCurrentUser
+        })?.participantStatus
         let isStatusConfirmed: Bool
         let isStatusTentative: Bool
-        switch ev.status {
-        case .confirmed:
-          isStatusConfirmed = true
-          isStatusTentative = false
-        case .tentative:
-          isStatusConfirmed = false
-          isStatusTentative = true
-        default:
-          isStatusConfirmed = false
-          isStatusTentative = false
+        let computedStatusLabel: String
+        if let s = selfParticipantStatus {
+          isStatusConfirmed = s == .accepted
+          isStatusTentative = s == .tentative
+          switch s {
+          case .accepted: computedStatusLabel = "Accepted"
+          case .tentative: computedStatusLabel = "Tentative"
+          case .declined: computedStatusLabel = "Declined"
+          case .pending: computedStatusLabel = "Pending"
+          default: computedStatusLabel = "Unknown"
+          }
+        } else {
+          // Fallback heuristic to align with Calendar UI:
+          // - If availability is `.tentative`, treat as Tentative
+          // - Else derive from overall event status
+          let availabilityTentative = ev.availability == .tentative
+          switch ev.status {
+          case .confirmed:
+            isStatusConfirmed = !availabilityTentative
+            isStatusTentative = availabilityTentative
+            computedStatusLabel = availabilityTentative ? "Tentative" : "Accepted"
+          case .tentative:
+            isStatusConfirmed = false
+            isStatusTentative = true
+            computedStatusLabel = "Tentative"
+          case .canceled:
+            isStatusConfirmed = false
+            isStatusTentative = false
+            computedStatusLabel = "Declined"
+          default:
+            isStatusConfirmed = false
+            isStatusTentative = availabilityTentative
+            computedStatusLabel = availabilityTentative ? "Tentative" : "Unknown"
+          }
         }
 
         // Derive availability for filtering purposes: only `.free` is free; all others are busy.
@@ -775,7 +844,7 @@ struct SyncEditorView: View {
 
         let targetTitle: String
         switch syncSnapshot.mode {
-        case .full:
+        case .full, .privateEvents:
           targetTitle = title
         case .blocker:
           let template = (syncSnapshot.blockerTitleTemplate ?? "Busy")
@@ -805,22 +874,16 @@ struct SyncEditorView: View {
             included: included,
             sourceNotes: ev.notes ?? "",
             repeats: ev.hasRecurrenceRules,
-            statusLabel: {
-              switch ev.status {
-              case .confirmed: return "Accepted"
-              case .tentative: return "Maybe"
-              case .canceled: return "Declined"
-              default: return "Unknown"
-              }
-            }(),
+            statusLabel: computedStatusLabel,
             attendeesCount: ev.attendees?.count ?? 0,
             availabilityLabel: availabilityLabel
           ))
       }
 
+      let resultPairs = pairs
       await MainActor.run {
         if Task.isCancelled { return }
-        createPreviews = pairs
+        createPreviews = resultPairs
         isLoadingPreview = false
       }
     }
@@ -868,10 +931,11 @@ extension SyncEditorView {
       return .attendees
     case .durationLongerThan, .durationShorterThan:
       return .duration
-    case .includeAllDay, .excludeAllDay:
+    case .includeAllDay, .excludeAllDay, .excludeAllDayWhenFree:
       return .allDay
-    case .onlyAccepted, .acceptedOrMaybe:
-      return .status
+    case .onlyAccepted, .acceptedOrTentative, .acceptedOrMaybe:
+      // Deprecated status filters; group irrelevant for UI
+      return .syncedItems
     case .attendeesCountAbove, .attendeesCountBelow:
       return .attendeesCount
     case .isRepeating, .isNotRepeating:
@@ -916,9 +980,12 @@ extension SyncEditorView {
     case .duration:
       return [.init(id: .durationLongerThan), .init(id: .durationShorterThan)]
     case .allDay:
-      return [.init(id: .includeAllDay), .init(id: .excludeAllDay)]
+      return [
+        .init(id: .includeAllDay), .init(id: .excludeAllDay), .init(id: .excludeAllDayWhenFree),
+      ]
     case .status:
-      return [.init(id: .onlyAccepted), .init(id: .acceptedOrMaybe)]
+      // Deprecated
+      return []
     case .attendeesCount:
       return [.init(id: .attendeesCountAbove), .init(id: .attendeesCountBelow)]
     case .repeating:
@@ -941,7 +1008,8 @@ extension SyncEditorView {
       .durationLongerThan, .durationShorterThan,
       .attendeesCountAbove, .attendeesCountBelow:
       return true
-    case .includeAllDay, .excludeAllDay, .onlyAccepted, .acceptedOrMaybe,
+    case .includeAllDay, .excludeAllDay, .excludeAllDayWhenFree, .onlyAccepted,
+      .acceptedOrTentative, .acceptedOrMaybe,
       .isRepeating, .isNotRepeating, .availabilityBusy, .availabilityFree,
       .ignoreOtherTuples:
       return false

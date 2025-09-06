@@ -352,16 +352,9 @@ private struct SettingsDetail: View {
 
   /// Removes all items we created (identified via mapping + tag) across all configs.
   private func removeAllSyncedItems() {
-    coordinator.syncNow(
-      configs: appState.syncs.map { cfg in
-        var tmp = cfg
-        tmp.enabled = true
-        return tmp
-      }, defaultHorizonDays: appState.defaultHorizonDays,
-      diagnosticsEnabled: appState.diagnosticsEnabled)
-    // Note: For a thorough purge, you'd implement a dedicated engine method to enumerate
-    // target calendars and delete items matching our marker+mapping. This button triggers
-    // a normal run; full purge can be added later.
+    // Invoke a dedicated purge that enumerates target calendars and removes items
+    // carrying our marker for each configured tuple, independent of horizon.
+    coordinator.purgeAll(configs: appState.syncs, diagnosticsEnabled: appState.diagnosticsEnabled)
   }
 
   /// Removes all configured syncs from persistence while keeping calendar items.
