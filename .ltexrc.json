@@ -1,0 +1,29 @@
+{
+  "description": "Limit LTeX to markdown/plaintext and exclude heavy project paths to reduce CPU.",
+  "enabled": true,
+  "language": "en-US",
+  "documentTypes": ["markdown", "plaintext"],
+  "hiddenFalsePositives": [],
+  "disabledRules": {
+    "en-US": []
+  },
+  "dictionary": {
+    "en-US": [
+      "CalendarSync",
+      "SyncScheduler",
+      "EventKit",
+      "SwiftData",
+      "SyncCoordinator"
+    ]
+  },
+  "ignore": [
+    "build/**",
+    "**/DerivedData/**",
+    "**/.build/**",
+    "CalendarSync.xcodeproj/**",
+    "Resources/Assets.xcassets/**",
+    "docs/AppIcons/**",
+    "**/.git/**",
+    "**/.cursor/**"
+  ]
+}

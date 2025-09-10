@@ -1,0 +1,28 @@
+{
+  "version": "0.2",
+  "useGitignore": true,
+  "name": "calendar-sync",
+  "description": "Project-level spell checker config to reduce CPU by ignoring build artifacts and limiting scope.",
+  "ignorePaths": [
+    "build/**",
+    "**/DerivedData/**",
+    "**/.build/**",
+    "**/*.xcworkspace/**",
+    "**/*.xcuserstate",
+    "**/*.xcuserdatad/**",
+    "CalendarSync.xcodeproj/**",
+    "Config/**",
+    "Resources/Assets.xcassets/**",
+    "docs/AppIcons/**",
+    "**/*.app/**",
+    "**/*.dSYM/**",
+    "**/.cursor/**",
+    "**/.git/**",
+    "**/node_modules/**"
+  ],
+  "languageSettings": [
+    { "languageId": "*", "enabled": false },
+    { "languageId": "markdown", "enabled": true },
+    { "languageId": "plaintext", "enabled": true }
+  ]
+}

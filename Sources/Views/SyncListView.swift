@@ -452,11 +452,19 @@ struct SyncEditorView: View {
 
         Section(header: sectionHeader("Time Windows").padding(.top, 24).padding(.bottom, 4)) {
           VStack(alignment: .leading, spacing: 8) {
-            ForEach($sync.timeWindows) { $tw in
+            // Display windows sorted by weekday, then by start time while preserving element bindings.
+            // How: Sort indices instead of values, then bind with $sync.timeWindows[idx].
+            let sortedIndices = sync.timeWindows
+              .enumerated()
+              .sorted { isTimeWindow($0.element, before: $1.element) }
+              .map { $0.offset }
+            ForEach(sortedIndices, id: \.self) { idx in
+              let twBinding = $sync.timeWindows[idx]
+              let tw = sync.timeWindows[idx]
               HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                   Text("Day")
-                  Picker("", selection: $tw.weekday) {
+                  Picker("", selection: twBinding.weekday) {
                     ForEach(Weekday.allCases) { d in Text(d.label).tag(d) }
                   }
                   .labelsHidden()
@@ -467,7 +475,9 @@ struct SyncEditorView: View {
                   DatePicker(
                     "",
                     selection: Binding(
-                      get: { tw.start.asDate() }, set: { tw.start = TimeOfDay.from(date: $0) }),
+                      get: { tw.start.asDate() },
+                      set: { newDate in twBinding.start.wrappedValue = TimeOfDay.from(date: newDate) }
+                    ),
                     displayedComponents: .hourAndMinute
                   )
                   .labelsHidden()
@@ -477,7 +487,9 @@ struct SyncEditorView: View {
                   DatePicker(
                     "",
                     selection: Binding(
-                      get: { tw.end.asDate() }, set: { tw.end = TimeOfDay.from(date: $0) }),
+                      get: { tw.end.asDate() },
+                      set: { newDate in twBinding.end.wrappedValue = TimeOfDay.from(date: newDate) }
+                    ),
                     displayedComponents: .hourAndMinute
                   )
                   .labelsHidden()
@@ -668,11 +680,47 @@ struct SyncEditorView: View {
   }
   private func removeRule(_ id: UUID) { sync.filters.removeAll { $0.id == id } }
 
+  /// Adds a new time window with smart defaults.
+  /// - Behavior:
+  ///   - If at least one window exists: use the same start/end as the last window in sorted order
+  ///     and advance the weekday to the next day (wrapping Sunday → Monday).
+  ///   - If none exist: seed with a standard 09:00–17:00 on Monday.
   private func addTimeWindow() {
-    sync.timeWindows.append(
-      TimeWindowUI(weekday: .monday, start: .default, end: TimeOfDay(hour: 17, minute: 0)))
+    if let last = sync.timeWindows.sorted(by: { isTimeWindow($0, before: $1) }).last {
+      let new = TimeWindowUI(weekday: nextWeekday(after: last.weekday), start: last.start, end: last.end)
+      sync.timeWindows.append(new)
+    } else {
+      sync.timeWindows.append(
+        TimeWindowUI(weekday: .monday, start: .default, end: TimeOfDay(hour: 17, minute: 0)))
+    }
   }
   private func removeTimeWindow(_ id: UUID) { sync.timeWindows.removeAll { $0.id == id } }
+
+  /// Determines ordering of time windows for display and defaulting logic.
+  /// Sorts by weekday (Mon..Sun), then by start time (hour, minute).
+  private func isTimeWindow(_ a: TimeWindowUI, before b: TimeWindowUI) -> Bool {
+    let weekdayOrder: [Weekday: Int] = [
+      .monday: 1, .tuesday: 2, .wednesday: 3, .thursday: 4, .friday: 5, .saturday: 6, .sunday: 7,
+    ]
+    let aDay = weekdayOrder[a.weekday] ?? 8
+    let bDay = weekdayOrder[b.weekday] ?? 8
+    if aDay != bDay { return aDay < bDay }
+    if a.start.hour != b.start.hour { return a.start.hour < b.start.hour }
+    return a.start.minute < b.start.minute
+  }
+
+  /// Returns the next weekday, wrapping Sunday → Monday.
+  private func nextWeekday(after day: Weekday) -> Weekday {
+    switch day {
+    case .monday: return .tuesday
+    case .tuesday: return .wednesday
+    case .wednesday: return .thursday
+    case .thursday: return .friday
+    case .friday: return .saturday
+    case .saturday: return .sunday
+    case .sunday: return .monday
+    }
+  }
 
   // MARK: - Preview helpers
   /// Whether preview is currently disabled due to missing permissions or invalid selection.
