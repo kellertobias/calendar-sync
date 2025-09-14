@@ -25,6 +25,7 @@ This app is vibe-coded - use at your own risk.
 - Tagging in Event Notes for safe sync even from multiple computers
 - Diagnostics logs (levels), filter and export (JSON/Text)
 - Scheduler with configurable interval; manual Sync Now
+- Sending tasks that are due within the sync time interval to a webhook URL
 - Run at Login toggle
 
 ## Running on multiple computers
