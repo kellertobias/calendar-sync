@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import OSLog
 import ServiceManagement
 import SwiftData
@@ -182,6 +183,7 @@ private struct SettingsDetail: View {
   @EnvironmentObject var calendars: EventKitCalendars
   @Environment(\.openWindow) private var openWindow
   @EnvironmentObject var coordinator: SyncCoordinator
+  @Environment(\.modelContext) private var context
   @State private var isRestarting: Bool = false
 
   var body: some View {
@@ -245,23 +247,24 @@ private struct SettingsDetail: View {
           .labelsHidden()
           .frame(width: 180, alignment: .leading)
           Spacer()
+          Button("Sync Now") { performManualSyncNow() }
         }
         .padding(.vertical, 4)
 
         Divider()
 
-        // Data
-        Text("Data").font(.headline)
+        // Settings Import/Export
+        Text("Settings").font(.headline)
           .padding(.top, 16)
           .padding(.bottom, 6)
         VStack(alignment: .leading, spacing: 12) {
           HStack(spacing: 12) {
-            Button("Export Data…") { exportDataZip() }
-            Button("Import Data…") { importDataZip() }
+            Button("Export Settings…") { exportSettingsJSON() }
+            Button("Import Settings…") { importSettingsJSON() }
             Button("Open Backups Folder") { openBackupsFolder() }
           }
           Text(
-            "Export creates a timestamped backup folder under Application Support/Backups. Import restores from the most recent backup folder automatically and relaunches the app."
+            "Exports settings to a timestamped JSON in Application Support/Backups. Import replaces current sync configurations from the most recent settings JSON."
           )
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -343,7 +346,25 @@ private struct SettingsDetail: View {
             }
           }
           .help(
-            "Removes all calendar items created by CalendarSync (identified via mapping + tag)."
+            "Removes all items in active target calendars containing the CalendarSync tag."
+          )
+          .padding(.vertical, 4)
+
+          // Clear only the internal mapping store without touching calendar events.
+          Button(role: .destructive) {
+            confirmAndClearEventMappings()
+          } label: {
+            Label {
+              Text("Clear Internal Synced-State")
+                .foregroundStyle(.primary)
+            } icon: {
+              Image(systemName: "trash.slash")
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.red)
+            }
+          }
+          .help(
+            "Deletes the internal mapping database (SDEventMapping) but does not modify any calendar events."
           )
           .padding(.vertical, 4)
 
@@ -373,11 +394,344 @@ private struct SettingsDetail: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
-  /// Removes all items we created (identified via mapping + tag) across all configs.
+  /// Removes all items managed by CalendarSync across all ACTIVE sync target calendars.
+  /// Behavior:
+  /// - Resolves unique target calendars from enabled syncs via EventKit.
+  /// - Prompts the user with a confirmation dialog listing the calendar names.
+  /// - On confirmation, invokes a purge that enumerates calendars directly and deletes events
+  ///   whose description contains the branding line "Tobisk Calendar Sync".
+  /// - Logs all deletions as "delete" actions in the run logs.
   private func removeAllSyncedItems() {
-    // Invoke a dedicated purge that enumerates target calendars and removes items
-    // carrying our marker for each configured tuple, independent of horizon.
+    // Gather unique target calendar identifiers from enabled syncs.
+    let enabledSyncs = appState.syncs.filter { $0.enabled }
+    let targetIds = Array(Set(enabledSyncs.map { $0.targetCalendarId }))
+
+    // Resolve human-readable calendar titles directly from EventKit (no internal store).
+    let store = EKEventStore()
+    let resolvedTitles: [String] = targetIds.map { id in
+      if let cal = store.calendar(withIdentifier: id) {
+        return cal.title
+      } else {
+        return "<missing> (\(id))"
+      }
+    }
+
+    // Construct and present a confirmation dialog that lists target calendars.
+    let alert = NSAlert()
+    alert.messageText = "Purge Selected Calendars?"
+    let list = resolvedTitles.isEmpty ? "(none)" : resolvedTitles.joined(separator: "\n• ")
+    alert.informativeText =
+      "This will permanently delete all events containing ‘Tobisk Calendar Sync’ in these calendars:\n• \(list)\n\nThis cannot be undone."
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: "Purge")
+    alert.addButton(withTitle: "Cancel")
+
+    print("Alert: \(alert)")
+    let response = alert.runModal()
+    guard response == .alertFirstButtonReturn else {
+      print("Response Cancel: \(response)")
+      return
+    }
+
+    print("Response: \(response)")
+
+    // Invoke a dedicated purge that enumerates target calendars directly via EventKit.
     coordinator.purgeAll(configs: appState.syncs, diagnosticsEnabled: appState.diagnosticsEnabled)
+  }
+
+  /// Triggers an immediate sync using the current app settings and configurations.
+  /// - Note: Uses `SyncCoordinator.syncNow` so progress and status are reflected via `lastStatus`.
+  private func performManualSyncNow() {
+    coordinator.syncNow(
+      configs: appState.syncs,
+      defaultHorizonDays: appState.defaultHorizonDays,
+      diagnosticsEnabled: appState.diagnosticsEnabled
+    )
+  }
+
+  /// Prompts for confirmation and then clears all `SDEventMapping` rows from the SwiftData store.
+  /// Why: Allows resetting internal knowledge of which items were synced, without touching calendars.
+  private func confirmAndClearEventMappings() {
+    let alert = NSAlert()
+    alert.messageText = "Clear Internal Synced-State?"
+    alert.informativeText =
+      "This deletes the internal mapping records that track which events have been synced. Calendar items will not be changed. This cannot be undone."
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: "Clear")
+    alert.addButton(withTitle: "Cancel")
+    let response = alert.runModal()
+    guard response == .alertFirstButtonReturn else { return }
+
+    do {
+      // Fetch all mappings in a single descriptor and delete them.
+      let fetch = FetchDescriptor<SDEventMapping>()
+      let all = try context.fetch(fetch)
+      for row in all { context.delete(row) }
+      try context.save()
+
+      let ok = NSAlert()
+      ok.messageText = "Cleared"
+      ok.informativeText = "Internal synced-state (mappings) has been cleared."
+      ok.alertStyle = .informational
+      ok.addButton(withTitle: "OK")
+      ok.runModal()
+    } catch {
+      let fail = NSAlert()
+      fail.messageText = "Failed to Clear"
+      fail.informativeText = "Error: \(error.localizedDescription)"
+      fail.alertStyle = .critical
+      fail.addButton(withTitle: "OK")
+      fail.runModal()
+    }
+  }
+
+  /// Exports only the sync configuration settings (and nested filter/time window rules) as JSON.
+  /// - Note: This intentionally excludes internal synced-state like `SDEventMapping` and all logs.
+  private func exportSettingsJSON() {
+    let logger = Logger(
+      subsystem: Bundle.main.bundleIdentifier ?? "CalendarSync", category: "ExportImport")
+    logger.info("exportSettingsJSON invoked")
+
+    do {
+      // Fetch the latest saved sync configurations with relationships.
+      let fetch = FetchDescriptor<SDSyncConfig>()
+      let models = try context.fetch(fetch)
+
+      // Transform into a stable, Codable export representation.
+      let syncs: [SyncExport] = models.map { m in
+        let filters = m.filters.map {
+          FilterExport(
+            id: $0.id, type: $0.typeRaw, pattern: $0.pattern, caseSensitive: $0.caseSensitive)
+        }
+        let windows = m.timeWindows.map {
+          TimeWindowExport(
+            id: $0.id,
+            weekday: $0.weekdayRaw,
+            startHour: $0.startHour,
+            startMinute: $0.startMinute,
+            endHour: $0.endHour,
+            endMinute: $0.endMinute
+          )
+        }
+        return SyncExport(
+          id: m.id,
+          name: m.name,
+          sourceCalendarId: m.sourceCalendarId,
+          targetCalendarId: m.targetCalendarId,
+          mode: m.modeRaw,
+          blockerTitleTemplate: m.blockerTitleTemplate,
+          horizonDaysOverride: m.horizonDaysOverride,
+          enabled: m.enabled,
+          createdAt: m.createdAt,
+          updatedAt: m.updatedAt,
+          filters: filters,
+          timeWindows: windows
+        )
+      }
+
+      let payload = SyncSettingsExport(version: 1, generatedAt: Date(), syncs: syncs)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys]
+      encoder.dateEncodingStrategy = .iso8601
+      let data = try encoder.encode(payload)
+
+      // Write into the Backups folder inside Application Support with a timestamped filename.
+      let fm = FileManager.default
+      guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      else {
+        throw NSError(
+          domain: "CalendarSync.Export", code: 5,
+          userInfo: [NSLocalizedDescriptionKey: "Could not locate Application Support directory"])
+      }
+      let backupsDir = appSupport.appendingPathComponent("Backups", isDirectory: true)
+      if !fm.fileExists(atPath: backupsDir.path) {
+        try fm.createDirectory(at: backupsDir, withIntermediateDirectories: true)
+      }
+      let df = DateFormatter()
+      df.dateFormat = "yyyyMMdd-HHmmss"
+      let fileURL = backupsDir.appendingPathComponent(
+        "CalendarSync-Settings-\(df.string(from: Date())).json")
+      try data.write(to: fileURL, options: [.atomic])
+
+      let alert = NSAlert()
+      alert.messageText = "Export Successful"
+      alert.informativeText = "Settings exported to: \(fileURL.path)"
+      alert.alertStyle = .informational
+      alert.addButton(withTitle: "Reveal in Finder")
+      alert.addButton(withTitle: "OK")
+      let response = alert.runModal()
+      if response == .alertFirstButtonReturn {
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+      }
+    } catch {
+      let alert = NSAlert()
+      alert.messageText = "Export Failed"
+      alert.informativeText = "Error: \(error.localizedDescription)"
+      alert.alertStyle = .critical
+      alert.addButton(withTitle: "OK")
+      alert.runModal()
+    }
+  }
+
+  /// Imports settings from the most recent settings JSON file in the Backups folder.
+  /// Prompts for confirmation, then replaces all existing sync configurations.
+  private func importSettingsJSON() {
+    let logger = Logger(
+      subsystem: Bundle.main.bundleIdentifier ?? "CalendarSync", category: "ExportImport")
+    logger.info("importSettingsJSON invoked (auto-restore latest settings JSON)")
+
+    do {
+      let fm = FileManager.default
+      guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      else {
+        throw NSError(
+          domain: "CalendarSync.Import", code: 11,
+          userInfo: [NSLocalizedDescriptionKey: "Could not locate Application Support directory"])
+      }
+      let backupsDir = appSupport.appendingPathComponent("Backups", isDirectory: true)
+      guard fm.fileExists(atPath: backupsDir.path) else {
+        throw NSError(
+          domain: "CalendarSync.Import", code: 12,
+          userInfo: [NSLocalizedDescriptionKey: "No Backups directory found. Run Export first."])
+      }
+
+      // Find most recent settings JSON matching our naming scheme.
+      let entries = try fm.contentsOfDirectory(
+        at: backupsDir, includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles])
+      let jsons = entries.filter { url in
+        url.lastPathComponent.hasPrefix("CalendarSync-Settings-")
+          && url.pathExtension.lowercased() == "json"
+      }
+      guard
+        let latest = jsons.max(by: { (a, b) -> Bool in
+          let aDate =
+            (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            ?? Date.distantPast
+          let bDate =
+            (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            ?? Date.distantPast
+          return aDate < bDate
+        })
+      else {
+        throw NSError(
+          domain: "CalendarSync.Import", code: 13,
+          userInfo: [NSLocalizedDescriptionKey: "No settings JSON files found in Backups."])
+      }
+
+      let data = try Data(contentsOf: latest)
+      let decoder = JSONDecoder()
+      decoder.dateDecodingStrategy = .iso8601
+      let payload = try decoder.decode(SyncSettingsExport.self, from: data)
+
+      // Confirm replacement of current settings.
+      let confirm = NSAlert()
+      confirm.messageText = "Replace Current Settings?"
+      confirm.informativeText =
+        "This will replace all current sync configurations with those from \(latest.lastPathComponent). This cannot be undone."
+      confirm.alertStyle = .warning
+      confirm.addButton(withTitle: "Replace")
+      confirm.addButton(withTitle: "Cancel")
+      guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+      // Delete all existing configs (cascade removes rules) and insert from JSON.
+      let existing = try context.fetch(FetchDescriptor<SDSyncConfig>())
+      for m in existing { context.delete(m) }
+
+      for s in payload.syncs {
+        let filters = s.filters.map { f in
+          SDFilterRule(
+            id: f.id, typeRaw: f.type, pattern: f.pattern, caseSensitive: f.caseSensitive)
+        }
+        let windows = s.timeWindows.map { w in
+          SDTimeWindow(
+            id: w.id,
+            weekdayRaw: w.weekday,
+            startHour: w.startHour,
+            startMinute: w.startMinute,
+            endHour: w.endHour,
+            endMinute: w.endMinute
+          )
+        }
+        let model = SDSyncConfig(
+          id: s.id,
+          name: s.name,
+          sourceCalendarId: s.sourceCalendarId,
+          targetCalendarId: s.targetCalendarId,
+          modeRaw: s.mode,
+          blockerTitleTemplate: s.blockerTitleTemplate,
+          horizonDaysOverride: s.horizonDaysOverride,
+          enabled: s.enabled,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+          filters: filters,
+          timeWindows: windows
+        )
+        context.insert(model)
+      }
+
+      try context.save()
+
+      // Refresh in-memory UI state to reflect imported models immediately.
+      let refreshed = try context.fetch(FetchDescriptor<SDSyncConfig>())
+      appState.syncs = refreshed.map { $0.toUI() }
+
+      let done = NSAlert()
+      done.messageText = "Import Successful"
+      done.informativeText = "Imported settings from: \(latest.lastPathComponent)"
+      done.alertStyle = .informational
+      done.addButton(withTitle: "OK")
+      done.runModal()
+    } catch {
+      let alert = NSAlert()
+      alert.messageText = "Import Failed"
+      alert.informativeText = "Error: \(error.localizedDescription)"
+      alert.alertStyle = .critical
+      alert.addButton(withTitle: "OK")
+      alert.runModal()
+    }
+  }
+
+  /// Top-level export payload for settings-only exports.
+  /// This excludes any internal state such as `SDEventMapping` and sync logs.
+  private struct SyncSettingsExport: Codable {
+    let version: Int
+    let generatedAt: Date
+    let syncs: [SyncExport]
+  }
+
+  /// Export model for a single sync configuration.
+  private struct SyncExport: Codable {
+    let id: UUID
+    let name: String
+    let sourceCalendarId: String
+    let targetCalendarId: String
+    let mode: String
+    let blockerTitleTemplate: String?
+    let horizonDaysOverride: Int?
+    let enabled: Bool
+    let createdAt: Date
+    let updatedAt: Date
+    let filters: [FilterExport]
+    let timeWindows: [TimeWindowExport]
+  }
+
+  /// Export model for a filter rule within a sync configuration.
+  private struct FilterExport: Codable {
+    let id: UUID
+    let type: String
+    let pattern: String
+    let caseSensitive: Bool
+  }
+
+  /// Export model for a time window within a sync configuration.
+  private struct TimeWindowExport: Codable {
+    let id: UUID
+    let weekday: String
+    let startHour: Int
+    let startMinute: Int
+    let endHour: Int
+    let endMinute: Int
   }
 
   /// Removes all configured syncs from persistence while keeping calendar items.
@@ -427,181 +781,9 @@ private struct SettingsDetail: View {
     }
   }
 
-  // MARK: - Export / Import
+  // MARK: - Export / Import (Settings only)
 
-  /// Returns URLs of existing SwiftData store files in Application Support.
-  /// Why: We export all present files (`default.store`, `default.store-wal`, `default.store-shm`) to preserve transactional state.
-  private func storeFileURLs() -> [URL] {
-    let fm = FileManager.default
-    guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-    else {
-      return []
-    }
-    let candidates = ["default.store", "default.store-wal", "default.store-shm"].map {
-      appSupport.appendingPathComponent($0)
-    }
-    return candidates.filter { fm.fileExists(atPath: $0.path) }
-  }
-
-  /// Opens an NSSavePanel and writes a ZIP containing the SwiftData store files.
-  private func exportDataZip() {
-    let logger = Logger(
-      subsystem: Bundle.main.bundleIdentifier ?? "CalendarSync", category: "ExportImport")
-    logger.info("exportDataZip invoked")
-
-    var files = storeFileURLs()
-
-    do {
-      // Compute destination inside the app container so sandbox permits writing
-      guard
-        let appSupport = FileManager.default.urls(
-          for: .applicationSupportDirectory, in: .userDomainMask
-        ).first
-      else {
-        throw NSError(
-          domain: "CalendarSync.Export", code: 2,
-          userInfo: [NSLocalizedDescriptionKey: "Could not locate Application Support directory"])
-      }
-      let backupsDir = appSupport.appendingPathComponent("Backups", isDirectory: true)
-      try FileManager.default.createDirectory(at: backupsDir, withIntermediateDirectories: true)
-      let df = DateFormatter()
-      df.dateFormat = "yyyyMMdd-HHmmss"
-      let destFolder = backupsDir.appendingPathComponent(
-        "CalendarSync-Backup-\(df.string(from: Date()))", isDirectory: true)
-      try FileManager.default.createDirectory(at: destFolder, withIntermediateDirectories: true)
-
-      // If there are no store files, create a small placeholder so export still proceeds.
-      if files.isEmpty {
-        let placeholder = destFolder.appendingPathComponent("README.txt")
-        let msg =
-          "No SwiftData store files were present at export time. This backup contains only this note."
-        try msg.data(using: .utf8)?.write(to: placeholder)
-        files = [placeholder]
-        logger.info("No store files found; created placeholder README.txt")
-      } else {
-        // Copy store files into destination folder
-        for src in files {
-          let dst = destFolder.appendingPathComponent(src.lastPathComponent)
-          if FileManager.default.fileExists(atPath: dst.path) {
-            try? FileManager.default.removeItem(at: dst)
-          }
-          try FileManager.default.copyItem(at: src, to: dst)
-        }
-      }
-
-      logger.info("Backup created at \(destFolder.path, privacy: .public)")
-
-      // Show success and reveal the folder in Finder
-      let alert = NSAlert()
-      alert.messageText = "Export Successful"
-      alert.informativeText = "Backup folder created at: \(destFolder.path)"
-      alert.alertStyle = .informational
-      alert.addButton(withTitle: "Reveal in Finder")
-      alert.addButton(withTitle: "OK")
-      let response = alert.runModal()
-      if response == .alertFirstButtonReturn {
-        NSWorkspace.shared.activateFileViewerSelecting([destFolder])
-      }
-    } catch {
-      logger.error("Error during export: \(error.localizedDescription, privacy: .public)")
-
-      // Show error alert
-      let alert = NSAlert()
-      alert.messageText = "Export Failed"
-      alert.informativeText = "Error: \(error.localizedDescription)"
-      alert.alertStyle = .critical
-      alert.addButton(withTitle: "OK")
-      alert.runModal()
-    }
-  }
-
-  /// Opens an NSOpenPanel, unzips the selected archive, and replaces store files.
-  /// The app relaunches after a successful import so the new store is loaded.
-  private func importDataZip() {
-    let logger = Logger(
-      subsystem: Bundle.main.bundleIdentifier ?? "CalendarSync", category: "ExportImport")
-    logger.info("importDataZip invoked (auto-restore latest backup)")
-
-    do {
-      let fm = FileManager.default
-      guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-      else {
-        throw NSError(
-          domain: "CalendarSync.Import", code: 1,
-          userInfo: [NSLocalizedDescriptionKey: "Could not locate Application Support directory"])
-      }
-      let backupsDir = appSupport.appendingPathComponent("Backups", isDirectory: true)
-      logger.debug("Backups directory: \(backupsDir.path, privacy: .public)")
-
-      guard fm.fileExists(atPath: backupsDir.path) else {
-        throw NSError(
-          domain: "CalendarSync.Import", code: 2,
-          userInfo: [NSLocalizedDescriptionKey: "No backups directory found. Run Export first."])
-      }
-
-      // Find most recent backup folder matching our naming pattern
-      let entries = try fm.contentsOfDirectory(
-        at: backupsDir, includingPropertiesForKeys: [.contentModificationDateKey],
-        options: [.skipsHiddenFiles])
-      let folders = entries.filter { url in
-        var isDir: ObjCBool = false
-        let exists = fm.fileExists(atPath: url.path, isDirectory: &isDir)
-        return exists && isDir.boolValue && url.lastPathComponent.hasPrefix("CalendarSync-Backup-")
-      }
-      guard
-        let latest = folders.max(by: { (a, b) -> Bool in
-          let aDate =
-            (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-            ?? Date.distantPast
-          let bDate =
-            (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-            ?? Date.distantPast
-          return aDate < bDate
-        })
-      else {
-        throw NSError(
-          domain: "CalendarSync.Import", code: 3,
-          userInfo: [NSLocalizedDescriptionKey: "No backup folders found."])
-      }
-
-      logger.info("Restoring from latest backup folder: \(latest.path, privacy: .public)")
-
-      var importedFiles = 0
-      for name in ["default.store", "default.store-wal", "default.store-shm"] {
-        let src = latest.appendingPathComponent(name)
-        guard fm.fileExists(atPath: src.path) else { continue }
-        let dst = appSupport.appendingPathComponent(name)
-        if fm.fileExists(atPath: dst.path) { try? fm.removeItem(at: dst) }
-        try fm.copyItem(at: src, to: dst)
-        importedFiles += 1
-      }
-
-      if importedFiles == 0 {
-        throw NSError(
-          domain: "CalendarSync.Import", code: 4,
-          userInfo: [NSLocalizedDescriptionKey: "Backup folder did not contain any data files."])
-      }
-
-      // Success alert
-      let alert = NSAlert()
-      alert.messageText = "Import Successful"
-      alert.informativeText =
-        "Restored from: \(latest.lastPathComponent). The app will now restart."
-      alert.alertStyle = .informational
-      alert.addButton(withTitle: "OK")
-      alert.runModal()
-
-      logger.info("Scheduling delayed relaunch after successful import")
-      self.beginDelayedRelaunch()
-    } catch {
-      let alert = NSAlert()
-      alert.messageText = "Import Failed"
-      alert.informativeText = "Error: \(error.localizedDescription)"
-      alert.alertStyle = .critical
-      alert.addButton(withTitle: "OK")
-      alert.runModal()
-    }
-  }
+  // Data import/export removed: app now supports settings JSON import/export only.
 
   /// Opens the Application Support/Backups directory in Finder, creating it if needed.
   /// Why: Allows users to copy backup folders in/out manually, which import/export will use.

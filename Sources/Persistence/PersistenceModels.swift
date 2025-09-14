@@ -155,6 +155,15 @@ import SwiftData
   var targetStart: Date?
   /// Snapshot of the target event's end date if available.
   var targetEnd: Date?
+  /// Identifier of the target calendar for this action (from the config at run time).
+  var targetCalendarId: String?
+  /// Identifier of the target event if known (after apply or for updates/deletes).
+  var targetEventIdentifier: String?
+  /// Whether the action appears to have been applied successfully (post-verify).
+  /// - Note: Nil when verification was not performed.
+  var applied: Bool?
+  /// Diagnostic message captured during verification or apply, if any (e.g., error or mismatch).
+  var diagnostic: String?
 
   /// Designated initializer for an action log row.
   /// - Parameters:
@@ -173,7 +182,11 @@ import SwiftData
     sourceEnd: Date?,
     targetTitle: String?,
     targetStart: Date?,
-    targetEnd: Date?
+    targetEnd: Date?,
+    targetCalendarId: String? = nil,
+    targetEventIdentifier: String? = nil,
+    applied: Bool? = nil,
+    diagnostic: String? = nil
   ) {
     self.id = id
     self.runLogId = runLogId
@@ -185,6 +198,10 @@ import SwiftData
     self.targetTitle = targetTitle
     self.targetStart = targetStart
     self.targetEnd = targetEnd
+    self.targetCalendarId = targetCalendarId
+    self.targetEventIdentifier = targetEventIdentifier
+    self.applied = applied
+    self.diagnostic = diagnostic
   }
 }
 

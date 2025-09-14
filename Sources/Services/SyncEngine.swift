@@ -1,5 +1,6 @@
 import EventKit
 import Foundation
+import OSLog
 import SwiftData
 
 /// Computes and applies one-way sync actions for a single configuration.
@@ -8,6 +9,20 @@ import SwiftData
 /// Why: Using `SDEventMapping` as the source of truth prevents relying solely on fragile tag parsing.
 @MainActor
 final class SyncEngine {
+  /// Lightweight snapshot describing a single purged target event.
+  /// - Why: Used to surface detailed purge logs in the UI without persisting raw `EKEvent`.
+  struct PurgedEventDetails {
+    /// Identifier of the calendar the event was deleted from.
+    let calendarId: String
+    /// Title of the deleted target event, if any.
+    let targetTitle: String?
+    /// Start date of the deleted target event, if any.
+    let targetStart: Date?
+    /// End date of the deleted target event, if any.
+    let targetEnd: Date?
+    /// EventKit identifier of the deleted target event, if known.
+    let targetEventIdentifier: String?
+  }
   struct PlanAction {
     enum Kind { case create, update, delete }
     let kind: Kind
@@ -25,6 +40,11 @@ final class SyncEngine {
 
   private let store = EKEventStore()
   private let modelContext: ModelContext
+  /// Logger used for purge diagnostics that are visible in the macOS unified console.
+  /// - Subsystem: Uses the app bundle identifier when available to simplify filtering.
+  /// - Category: "Purge" to group messages related to purge operations.
+  private let purgeLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "com.example.CalendarSync", category: "Purge")
 
   /// Initializes the engine with a SwiftData model context.
   /// - Parameter modelContext: Context used to read/write `SDEventMapping` and logs.
@@ -41,30 +61,27 @@ final class SyncEngine {
   }()
 
   /// Builds stable components used to identify a specific occurrence of a source event.
-  /// - Returns: `(sourceId, occISO, key)` where key is `tuple|sourceId|occISO`.
+  /// - Returns: `(sourceId, occISO, key)` where key is `sourceId|occISO`.
   /// - Why: Recurring events share an identifier; `occurrenceDate` disambiguates instances.
   /// - Note: For detached overrides, EventKit sets `occurrenceDate` to the original instance date,
   ///   which is what we want to ensure mappings remain stable even when an instance is edited.
-  private func makeOccurrenceComponents(_ event: EKEvent, configId: UUID) -> (
+  private func makeOccurrenceComponents(_ event: EKEvent) -> (
     String, String, String
   ) {
     let sourceId = event.eventIdentifier ?? UUID().uuidString
     let occDate = event.occurrenceDate ?? event.startDate ?? Date()
     let occISO = isoFormatter.string(from: occDate)
-    let key = "\(configId.uuidString)|\(sourceId)|\(occISO)"
+    let key = "\(sourceId)|\(occISO)"
     return (sourceId, occISO, key)
   }
 
   /// Marker inserted on created/managed target events.
   private func marker(syncId: UUID, sourceId: String, occurrenceISO: String) -> String {
-    "[CalendarSync] tuple=\(syncId.uuidString) source=\(sourceId) occ=\(occurrenceISO)"
+    "[CalendarSync] source=\(sourceId) occ=\(occurrenceISO)"
   }
 
-  private func extractMarker(from event: EKEvent) -> (tuple: String, source: String, occ: String)? {
-    if let m = SyncRules.extractMarker(notes: event.notes, urlString: event.url?.absoluteString) {
-      return (m.tuple, m.source, m.occ)
-    }
-    return nil
+  private func extractMarker(from event: EKEvent) -> SyncRules.Marker? {
+    SyncRules.extractMarker(notes: event.notes, urlString: event.url?.absoluteString)
   }
 
   /// Builds a human-readable branding line and the machine-readable marker block.
@@ -99,7 +116,9 @@ final class SyncEngine {
   func buildPlan(config: SyncConfigUI, defaultHorizonDays: Int) -> PlanResult {
     // Require full access on macOS 14+ to avoid deprecation and ensure read capability.
     let auth = EKEventStore.authorizationStatus(for: .event)
-    guard auth == .fullAccess else {
+    // Accept legacy `.authorized` as valid read permission too to keep sync working
+    // on systems granting the pre-macOS14 status.
+    guard auth == .fullAccess || auth == .authorized else {
       return PlanResult(actions: [], created: 0, updated: 0, deleted: 0)
     }
 
@@ -135,20 +154,20 @@ final class SyncEngine {
       }
     }
 
-    // Index target by (tuple, sourceId, occ) via tags
+    // Index target by (sourceId, occ) via tags
     var taggedTargets: [String: EKEvent] = [:]
     for te in targetEvents {
       if let tag = extractMarker(from: te) {
-        let key = "\(tag.tuple)|\(tag.source)|\(tag.occ)"
+        let key = "\(tag.source)|\(tag.occ)"
         taggedTargets[key] = te
       }
     }
 
-    // Index target by (tuple, sourceId, occ) via mappings
+    // Index target by (sourceId, occ) via mappings
     var mappedTargets: [String: EKEvent] = [:]
     for m in mappings {
       if let te = targetByIdentifier[m.targetEventIdentifier] {
-        let key = "\(config.id.uuidString)|\(m.sourceEventIdentifier)|\(m.occurrenceDateKey)"
+        let key = "\(m.sourceEventIdentifier)|\(m.occurrenceDateKey)"
         mappedTargets[key] = te
       }
     }
@@ -236,12 +255,18 @@ final class SyncEngine {
     var updated = 0
     var deleted = 0
 
-    // Build a set of valid keys from source to later detect deletions
+    // Build sets of keys from source occurrences:
+    // - liveKeys: only those that pass filters/time windows (used for create/update)
+    // - allKeys: all occurrences regardless of filters (used to avoid unsafe deletes
+    //            when the source still exists but is merely filtered out)
     var liveKeys: Set<String> = []
+    var allKeys: Set<String> = []
 
     for se in sourceEvents {
+      let (_, _, rawKey) = makeOccurrenceComponents(se)
+      allKeys.insert(rawKey)
       guard passesFilters(se), allowedByTimeWindows(se) else { continue }
-      let (sourceId, occISO, key) = makeOccurrenceComponents(se, configId: config.id)
+      let (sourceId, occISO, key) = makeOccurrenceComponents(se)
       liveKeys.insert(key)
       let teFromMapping = mappedTargets[key]
       let teFromTag = teFromMapping == nil ? taggedTargets[key] : nil
@@ -281,26 +306,22 @@ final class SyncEngine {
     // Deletions: consider both mapped and tagged targets, but require ownership safety
     func hasMapping(for key: String) -> Bool {
       mappedTargets[key] != nil
-        || mappings.contains {
-          "\(config.id.uuidString)|\($0.sourceEventIdentifier)|\($0.occurrenceDateKey)" == key
-        }
+        || mappings.contains { "\($0.sourceEventIdentifier)|\($0.occurrenceDateKey)" == key }
     }
     func safeToDelete(_ te: EKEvent, key: String) -> Bool {
-      let marker = extractMarker(from: te).map {
-        SyncRules.Marker(tuple: $0.tuple, source: $0.source, occ: $0.occ)
-      }
+      let marker = extractMarker(from: te)
       return SyncRules.safeToDeletePolicy(
-        configId: config.id,
         targetCalendarId: config.targetCalendarId,
         eventCalendarId: te.calendar.calendarIdentifier,
-        marker: marker,
-        hasMapping: hasMapping(for: key)
+        marker: marker
       )
     }
 
     // From mappings
     for (key, te) in mappedTargets {
-      if !liveKeys.contains(key) && safeToDelete(te, key: key) {
+      // Only consider deletion when the source occurrence no longer exists at all.
+      // If the source still exists (but is filtered out), keep the target to avoid churn.
+      if !liveKeys.contains(key) && !allKeys.contains(key) && safeToDelete(te, key: key) {
         actions.append(
           PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (mapped)"))
         deleted += 1
@@ -308,9 +329,11 @@ final class SyncEngine {
     }
     // From tags that are not mapped (legacy)
     for te in targetEvents {
-      guard let tag = extractMarker(from: te), tag.tuple == config.id.uuidString else { continue }
-      let key = "\(tag.tuple)|\(tag.source)|\(tag.occ)"
-      if mappedTargets[key] == nil && !liveKeys.contains(key) && safeToDelete(te, key: key) {
+      guard let tag = extractMarker(from: te) else { continue }
+      let key = "\(tag.source)|\(tag.occ)"
+      if mappedTargets[key] == nil && !liveKeys.contains(key) && !allKeys.contains(key)
+        && safeToDelete(te, key: key)
+      {
         actions.append(
           PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (tagged)"))
         deleted += 1
@@ -341,7 +364,25 @@ final class SyncEngine {
 
   /// Applies a plan directly to the target calendar. Requires authorization.
   func apply(config: SyncConfigUI, plan: PlanResult) throws {
-    guard let targetCal = store.calendar(withIdentifier: config.targetCalendarId) else { return }
+    guard let targetCal = store.calendar(withIdentifier: config.targetCalendarId) else {
+      throw NSError(
+        domain: "CalendarSync.SyncEngine", code: 1000,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Target calendar not found. Re-select the target in Settings."
+        ])
+    }
+    // Preflight: Fail fast when the selected target calendar cannot be modified.
+    // Why: Some calendars (e.g., subscribed/read-only) do not allow event creation or updates.
+    // Surfacing a clear error here makes troubleshooting much easier than relying on EventKit errors.
+    if !targetCal.allowsContentModifications {
+      throw NSError(
+        domain: "CalendarSync.SyncEngine", code: 1001,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "Target calendar is read-only: \(targetCal.title). Choose a writable calendar."
+        ])
+    }
     for action in plan.actions {
       switch action.kind {
       case .create:
@@ -349,13 +390,24 @@ final class SyncEngine {
         let ev = EKEvent(eventStore: store)
         ev.calendar = targetCal
         copy(from: se, to: ev, mode: config.mode, template: config.blockerTitleTemplate)
-        let (sourceId, occISO, _) = makeOccurrenceComponents(se, configId: config.id)
+        let (sourceId, occISO, _) = makeOccurrenceComponents(se)
         let tag = marker(syncId: config.id, sourceId: sourceId, occurrenceISO: occISO)
         let brandBlock = brandedMarkerBlock(
           configId: config.id, sourceId: sourceId, occurrenceISO: occISO)
         ev.notes = appendBrandingIfMissing(originalNotes: se.notes, brandAndMarker: brandBlock)
         if ev.url == nil { ev.url = URL(string: tag) }
         try store.save(ev, span: .thisEvent)
+        // Verify the event exists after save to catch silent no-ops.
+        if let savedId = ev.eventIdentifier {
+          if store.event(withIdentifier: savedId) == nil {
+            throw NSError(
+              domain: "CalendarSync.SyncEngine", code: 1101,
+              userInfo: [
+                NSLocalizedDescriptionKey:
+                  "Create verification failed: saved event not found in target store"
+              ])
+          }
+        }
         // Persist mapping after successful save
         if let targetId = ev.eventIdentifier {
           let mapping = SDEventMapping(
@@ -375,7 +427,7 @@ final class SyncEngine {
         let hasMarker =
           SyncRules.extractMarker(notes: te.notes, urlString: te.url?.absoluteString) != nil
         if !hasMarker {
-          let (sourceId, occISO, _) = makeOccurrenceComponents(se, configId: config.id)
+          let (sourceId, occISO, _) = makeOccurrenceComponents(se)
           let tag = marker(syncId: config.id, sourceId: sourceId, occurrenceISO: occISO)
           let brandBlock = brandedMarkerBlock(
             configId: config.id, sourceId: sourceId, occurrenceISO: occISO)
@@ -391,7 +443,7 @@ final class SyncEngine {
         try store.save(te, span: .thisEvent)
         // Upsert mapping on update in case identifiers rotated
         if let targetId = te.eventIdentifier {
-          let (sourceId, occISO, _) = makeOccurrenceComponents(se, configId: config.id)
+          let (sourceId, occISO, _) = makeOccurrenceComponents(se)
           let fetch = FetchDescriptor<SDEventMapping>(
             predicate: #Predicate {
               $0.syncConfigId == config.id && $0.sourceEventIdentifier == sourceId
@@ -415,6 +467,17 @@ final class SyncEngine {
       case .delete:
         if let te = action.target {
           try store.remove(te, span: .thisEvent)
+          // Verify the event is gone to catch silent no-ops.
+          if let deletedId = te.eventIdentifier {
+            if store.event(withIdentifier: deletedId) != nil {
+              throw NSError(
+                domain: "CalendarSync.SyncEngine", code: 1201,
+                userInfo: [
+                  NSLocalizedDescriptionKey:
+                    "Delete verification failed: event still present after removal"
+                ])
+            }
+          }
           // Best-effort cleanup of mapping for this target id
           if let targetId = te.eventIdentifier {
             let fetch = FetchDescriptor<SDEventMapping>(
@@ -452,101 +515,123 @@ final class SyncEngine {
     //   on the target service (iCloud/Google/Exchange) and account ACLs.
   }
 
-  /// Purges all target events managed by CalendarSync for the given configuration.
-  /// - Parameters:
-  ///   - config: The sync tuple whose managed target items should be deleted.
-  ///   - includeLegacyTagOnly: When true, also delete items that only have the marker tag
-  ///     without an associated mapping row (backwards compatibility with older versions).
-  /// - Returns: The number of deleted events.
-  /// - Why: The regular sync plan only deletes items that no longer match the source, within the
-  ///   configured horizon. For a user-initiated full purge we enumerate the entire target calendar
-  ///   and remove any event carrying our marker. Tuple id does not need to match the current config,
-  ///   which ensures we also delete events created by removed/legacy tuples.
-  func purgeManagedTargets(for config: SyncConfigUI, includeLegacyTagOnly: Bool = true) throws
-    -> Int
-  {
-    // Require authorization; EventKit returns no events otherwise.
-    let auth = EKEventStore.authorizationStatus(for: .event)
-    guard auth == .fullAccess else { return 0 }
-
-    guard let targetCal = store.calendar(withIdentifier: config.targetCalendarId) else { return 0 }
-
-    // Enumerate a wide date range. EventKit requires finite bounds; distantPast/future are OK.
-    let start = Date.distantPast
-    let end = Date.distantFuture
-    let predicate = store.predicateForEvents(withStart: start, end: end, calendars: [targetCal])
-    let targetEvents = store.events(matching: predicate)
-
-    // Preload mapping target ids for this config to validate ownership and for cleanup.
-    let mappingFetch = FetchDescriptor<SDEventMapping>(
-      predicate: #Predicate { $0.syncConfigId == config.id }
-    )
-    let mappings: [SDEventMapping] = (try? modelContext.fetch(mappingFetch)) ?? []
-    let mappedTargetIds: Set<String> = Set(mappings.map { $0.targetEventIdentifier })
-
-    var deletedCount = 0
-    for ev in targetEvents {
-      // Only consider events that clearly carry our marker, regardless of tuple id.
-      guard extractMarker(from: ev) != nil else { continue }
-
-      // Ownership check for safety: prefer mapping; optionally allow legacy tag-only items.
-      let hasMapping = (ev.eventIdentifier.map { mappedTargetIds.contains($0) } ?? false)
-      if !hasMapping && !includeLegacyTagOnly { continue }
-
-      // Delete this single event instance. Our engine creates individual instances; not series.
-      try store.remove(ev, span: .thisEvent)
-      deletedCount += 1
-
-      // Best-effort: remove any mapping rows for this target identifier.
-      if let targetId = ev.eventIdentifier {
-        let fetch = FetchDescriptor<SDEventMapping>(
-          predicate: #Predicate {
-            $0.syncConfigId == config.id && $0.targetEventIdentifier == targetId
-          })
-        if let rows = try? modelContext.fetch(fetch) {
-          for r in rows { modelContext.delete(r) }
-        }
-      }
-    }
-
-    // Persist mapping cleanup if any.
-    if deletedCount > 0 { try? modelContext.save() }
-    return deletedCount
-  }
+  // Removed legacy implementation of purgeManagedTargets(for:includeLegacyTagOnly:)
+  // Now using the more comprehensive purgeManagedTargets(in:) implementation below.
 
   /// Purges all events carrying the CalendarSync marker in the specified target calendars.
   /// - Parameter targetCalendarIds: Identifiers of target calendars to purge.
-  /// - Returns: Total number of deleted events across all calendars.
+  /// - Returns: Tuple including:
+  ///   - `deleted`: Total number of deleted events across all calendars.
+  ///   - `details`: Lightweight per-event details for logging.
+  ///   - `summaries`: Per-calendar diagnostic summaries (attempted, matched, deleted, writability).
+  ///   - `authStatus`: Human-readable authorization status at the time of purge.
   /// - Why: Allows purging even when sync configurations are disabled or when multiple configs
   ///   share the same target calendar. This does not require knowledge of current tuples.
-  func purgeManagedTargets(in targetCalendarIds: [String]) throws -> Int {
+  /// - Implementation: Events are enumerated directly from the specified EventKit calendars.
+  ///   Internal mappings are consulted only to remove rows corresponding to successfully deleted
+  ///   events. Mappings never drive which events are selected for purge.
+  struct PurgeCalendarSummary {
+    /// Identifier of the calendar that was scanned.
+    let calendarId: String
+    /// Display name of the calendar that was scanned.
+    let calendarTitle: String
+    /// Whether EventKit reports the calendar allows content modifications (create/update/delete).
+    let allowsModifications: Bool
+    /// Total number of events enumerated in this calendar (bounded by distantPast/future).
+    let enumeratedCount: Int
+    /// Number of events that matched our branding/tag presence criteria.
+    let brandingMatchCount: Int
+    /// Number of events successfully deleted from this calendar.
+    let deletedCount: Int
+  }
+
+  func purgeManagedTargets() throws -> (
+    deleted: Int, details: [PurgedEventDetails], summaries: [PurgeCalendarSummary],
+    authStatus: String
+  ) {
+    print(
+      "Purging managed targets"
+    )
     let auth = EKEventStore.authorizationStatus(for: .event)
-    guard auth == .fullAccess else { return 0 }
+    let authStatus: String = {
+      switch auth {
+      case .fullAccess: return "fullAccess"
+      case .writeOnly: return "writeOnly"
+      case .authorized: return "authorized"
+      case .restricted: return "restricted"
+      case .denied: return "denied"
+      case .notDetermined: return "notDetermined"
+      @unknown default: return "unknown"
+      }
+    }()
+    guard auth == .fullAccess || auth == .authorized || auth == .writeOnly else {
+      print(
+        "Authorization status is \(authStatus), cannot purge"
+      )
+      return (0, [], [], authStatus)
+    }
+
+    print(
+      "Authorization status is \(authStatus), continuing with purge"
+    )
 
     var total = 0
-    // Preload mapping rows indexed by target id for best-effort cleanup.
-    let mappingFetch = FetchDescriptor<SDEventMapping>()
-    let mappings: [SDEventMapping] = (try? modelContext.fetch(mappingFetch)) ?? []
-    var mappingsByTarget: [String: [SDEventMapping]] = [:]
-    for m in mappings { mappingsByTarget[m.targetEventIdentifier, default: []].append(m) }
+    var details: [PurgedEventDetails] = []
+    var summaries: [PurgeCalendarSummary] = []
 
-    for calId in Set(targetCalendarIds) {
-      guard let cal = store.calendar(withIdentifier: calId) else { continue }
-      let start = Date.distantPast
-      let end = Date.distantFuture
-      let predicate = store.predicateForEvents(withStart: start, end: end, calendars: [cal])
-      let events = store.events(matching: predicate)
-      for ev in events {
-        guard extractMarker(from: ev) != nil else { continue }
-        try store.remove(ev, span: .thisEvent)
-        total += 1
-        if let targetId = ev.eventIdentifier, let rows = mappingsByTarget[targetId] {
-          for r in rows { modelContext.delete(r) }
-          mappingsByTarget[targetId] = nil
-        }
+    var start = Date()
+    var end = Date()
+
+    start.addTimeInterval(-1 * 365 * 24 * 3600 * 1.0)
+    end.addTimeInterval(4 * 365 * 24 * 3600 * 1.0)
+
+    let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+    let events = store.events(matching: predicate)
+
+    // Log how many events we enumerated in this calendar for transparency in the console.
+    print(
+      " -> Date Range: \(start) to \(end)"
+    )
+    print(
+      " -> Predicate: \(predicate)"
+    )
+    print(
+      " -> Enumerated \(events.count) events to delete"
+    )
+    var matches = 0
+    var deletedInCalendar = 0
+
+    for ev in events {
+      // Prepare human-readable timestamps for logging purposes.
+      let startISO = ev.startDate.map { isoFormatter.string(from: $0) } ?? "-"
+      let endISO = ev.endDate.map { isoFormatter.string(from: $0) } ?? "-"
+
+      // Deletion criteria: only check that the notes (description) contain the branding phrase.
+      // We do not rely on structured markers or URL tags for deletion.
+      let hasBranding = (ev.notes?.contains("Tobisk Calendar Sync") ?? false)
+      guard hasBranding else {
+        continue
       }
+      matches += 1
+      // Log the candidate that will be deleted.
+      print(
+        "         -> Matched for purge: '\(ev.title ?? "")' [\(startISO) – \(endISO)]"
+      )
+
+      try store.remove(ev, span: .thisEvent)
+      total += 1
+      deletedInCalendar += 1
+
+      // Confirm deletion in the console for immediate feedback.
+      print(
+        "         -> Deleted: '\(ev.title ?? "")' [\(startISO) – \(endISO)]"
+      )
     }
-    if total > 0 { try? modelContext.save() }
-    return total
+
+    print(
+      "Calendar purged"
+    )
+
+    return (total, details, summaries, authStatus)
   }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -10,6 +11,7 @@ struct LogsView: View {
   @State private var selectedLevel: String = "all"  // all | info | warn | error
   @State private var selectedRunId: UUID? = nil
   @State private var searchText: String = ""
+  @State private var showConfirmClear: Bool = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -26,8 +28,9 @@ struct LogsView: View {
             Text("Error").tag("error")
           }.pickerStyle(.segmented)
           Spacer()
-          Button("Export JSON", action: exportJSON)
-          Button("Export Text", action: exportText)
+          Button("Clear Logs", role: .destructive) { showConfirmClear = true }
+            .disabled(logs.isEmpty)
+          Button("Copy Logs as Text", action: copyLogsAsText)
         }
         .padding(.bottom, 4)
 
@@ -76,7 +79,8 @@ struct LogsView: View {
                 .onTapGesture { selectedRunId = log.id }
             }
           }
-          .frame(minWidth: 500)
+          .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
+          .layoutPriority(1)
 
           Divider()
 
@@ -90,6 +94,19 @@ struct LogsView: View {
                 .frame(maxWidth: 220)
             }
             .padding(.bottom, 4)
+
+            // Sync details for the selected run
+            if let runId = selectedRunId, let cfg = syncConfig(forRunId: runId) {
+              VStack(alignment: .leading, spacing: 6) {
+                Text(cfg.name).font(.subheadline).bold()
+                HStack(spacing: 12) {
+                  calendarChip(label: "Source", calendarId: cfg.sourceCalendarId)
+                  calendarChip(label: "Target", calendarId: cfg.targetCalendarId)
+                }
+              }
+              .padding(.bottom, 6)
+              Divider()
+            }
 
             if let runId = selectedRunId, !actionsForRun(runId: runId).isEmpty {
               List(actionsForRun(runId: runId)) { a in
@@ -111,12 +128,17 @@ struct LogsView: View {
                   if let tgt = a.targetTitle {
                     Text("Target: \(tgt)").foregroundStyle(.secondary)
                   }
+                  if let calId = a.targetCalendarId, !calId.isEmpty {
+                    Text("Target calendar: \(calId)").foregroundStyle(.secondary)
+                  }
+                  if let evId = a.targetEventIdentifier, !evId.isEmpty {
+                    Text("Target event ID: \(evId)").foregroundStyle(.secondary)
+                  }
                 }
                 .padding(.vertical, 4)
               }
               .listStyle(.inset)
-              // Fixed width keeps the master table fluid while making the detail predictable
-              .frame(width: 400)
+              .frame(maxHeight: .infinity)
             } else {
               Text(
                 selectedRunId == nil ? "Select a run to view actions" : "No actions for this run"
@@ -125,11 +147,19 @@ struct LogsView: View {
               Spacer()
             }
           }
+          .frame(width: 400)
+          .frame(maxHeight: .infinity)
         }
       }
     }
     .padding()
     .frame(minWidth: 600, minHeight: 400)
+    .alert("Clear all logs?", isPresented: $showConfirmClear) {
+      Button("Cancel", role: .cancel) {}
+      Button("Delete", role: .destructive) { clearLogs() }
+    } message: {
+      Text("This will permanently remove all run and action logs.")
+    }
   }
 
   private func filteredLogs() -> [SDSyncRunLog] {
@@ -137,40 +167,52 @@ struct LogsView: View {
     return logs.filter { $0.levelRaw == selectedLevel }
   }
 
-  private func exportJSON() {
-    let items = filteredLogs().map { log in
-      [
-        "id": log.id.uuidString,
-        "syncConfigId": log.syncConfigId.uuidString,
-        "startedAt": ISO8601DateFormatter().string(from: log.startedAt),
-        "finishedAt": ISO8601DateFormatter().string(from: log.finishedAt),
-        "result": log.resultRaw,
-        "level": log.levelRaw,
-        "created": log.created,
-        "updated": log.updated,
-        "deleted": log.deleted,
-        "message": log.message,
-      ] as [String: Any]
+  private func copyLogsAsText() {
+    var sections: [String] = []
+    let iso = ISO8601DateFormatter()
+    if let runId = selectedRunId,
+      let run = filteredLogs().first(where: { $0.id == runId })
+    {
+      var lines: [String] = []
+      lines.append("RUN id=\(run.id.uuidString)")
+      lines.append(
+        "finishedAt=\(iso.string(from: run.finishedAt)) result=\(run.resultRaw) level=\(run.levelRaw)"
+      )
+      lines.append("created=\(run.created) updated=\(run.updated) deleted=\(run.deleted)")
+      lines.append("message=\(run.message)")
+      if let cfg = syncConfig(forRunId: runId) {
+        lines.append("configId=\(cfg.id) name=\(cfg.name)")
+        lines.append("sourceCalendarId=\(cfg.sourceCalendarId)")
+        lines.append("targetCalendarId=\(cfg.targetCalendarId)")
+        lines.append("mode=\(cfg.modeRaw) horizonDays=\(cfg.horizonDaysOverride ?? 0)")
+      }
+      let acts = actionsForRun(runId: runId)
+      lines.append("actions.count=\(acts.count)")
+      for (idx, a) in acts.enumerated() {
+        lines.append("-- action[\(idx)] kind=\(a.kindRaw) reason=\(a.reason)")
+        func fmt(_ d: Date?) -> String { d.map { iso.string(from: $0) } ?? "" }
+        if let s = a.sourceTitle { lines.append("   sourceTitle=\(s)") }
+        if let d = a.sourceStart { lines.append("   sourceStart=\(fmt(d))") }
+        if let d = a.sourceEnd { lines.append("   sourceEnd=\(fmt(d))") }
+        if let t = a.targetTitle { lines.append("   targetTitle=\(t)") }
+        if let d = a.targetStart { lines.append("   targetStart=\(fmt(d))") }
+        if let d = a.targetEnd { lines.append("   targetEnd=\(fmt(d))") }
+        if let cal = a.targetCalendarId, !cal.isEmpty { lines.append("   targetCalendarId=\(cal)") }
+        if let ev = a.targetEventIdentifier, !ev.isEmpty {
+          lines.append("   targetEventIdentifier=\(ev)")
+        }
+      }
+      sections.append(lines.joined(separator: "\n"))
+    } else {
+      let lines = filteredLogs().map { log in
+        "[\(log.levelRaw.uppercased())] \(iso.string(from: log.finishedAt)) cfg=\(log.syncConfigId) res=\(log.resultRaw) c/u/d=\(log.created)/\(log.updated)/\(log.deleted) msg=\(log.message)"
+      }
+      sections.append(lines.joined(separator: "\n"))
     }
-    if let data = try? JSONSerialization.data(withJSONObject: items, options: [.prettyPrinted]) {
-      writeToDownloads(filename: "CalendarSync-Logs.json", data: data)
-    }
-  }
-
-  private func exportText() {
-    let lines = filteredLogs().map { log in
-      "[\(log.levelRaw.uppercased())] \(log.finishedAt) cfg=\(log.syncConfigId) res=\(log.resultRaw) c/u/d=\(log.created)/\(log.updated)/\(log.deleted) msg=\(log.message)"
-    }
-    if let data = lines.joined(separator: "\n").data(using: .utf8) {
-      writeToDownloads(filename: "CalendarSync-Logs.txt", data: data)
-    }
-  }
-
-  private func writeToDownloads(filename: String, data: Data) {
-    let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-    if let url = downloads?.appendingPathComponent(filename) {
-      try? data.write(to: url)
-    }
+    let text = sections.joined(separator: "\n\n")
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.setString(text, forType: .string)
   }
 
   /// Fetches actions for the selected run id and filters with a simple search query.
@@ -185,7 +227,8 @@ struct LogsView: View {
     func contains(_ s: String?) -> Bool { (s ?? "").lowercased().contains(lq) }
     return items.filter { a in
       contains(a.kindRaw) || contains(a.reason) || contains(a.sourceTitle)
-        || contains(a.targetTitle)
+        || contains(a.targetTitle) || contains(a.targetCalendarId)
+        || contains(a.targetEventIdentifier)
     }
   }
 
@@ -197,6 +240,59 @@ struct LogsView: View {
     case "delete": return .red
     default: return .secondary
     }
+  }
+
+  /// Finds the sync config for a given run id.
+  private func syncConfig(forRunId runId: UUID) -> SDSyncConfig? {
+    guard let run = logs.first(where: { $0.id == runId }) else { return nil }
+    let configId = run.syncConfigId
+    let fetch = FetchDescriptor<SDSyncConfig>(
+      predicate: #Predicate { $0.id == configId }
+    )
+    return (try? modelContext.fetch(fetch))?.first
+  }
+
+  /// Small labeled pill showing a calendar name with its color dot.
+  @ViewBuilder private func calendarChip(label: String, calendarId: String) -> some View {
+    let option = appState.availableCalendars.first(where: { $0.id == calendarId })
+    let name = option?.name ?? calendarId
+    let color = option?.colorHex.flatMap(colorFromHex) ?? .secondary
+    HStack(spacing: 6) {
+      Circle().fill(color).frame(width: 10, height: 10)
+      Text("\(label): \(name)")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(Color.secondary.opacity(0.12))
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+  }
+
+  /// Converts a hex color string like "#RRGGBB" to a SwiftUI Color.
+  private func colorFromHex(_ hex: String) -> Color {
+    var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    if hexSanitized.hasPrefix("#") { hexSanitized.removeFirst() }
+    guard hexSanitized.count == 6, let rgb = UInt32(hexSanitized, radix: 16) else {
+      return .secondary
+    }
+    let r = Double((rgb & 0xFF0000) >> 16) / 255.0
+    let g = Double((rgb & 0x00FF00) >> 8) / 255.0
+    let b = Double(rgb & 0x0000FF) / 255.0
+    return Color(.sRGB, red: r, green: g, blue: b, opacity: 1)
+  }
+
+  /// Deletes all logs and associated action rows from the store.
+  private func clearLogs() {
+    selectedRunId = nil
+    // Delete actions first, then run logs.
+    let actionFetch = FetchDescriptor<SDSyncActionLog>()
+    let runFetch = FetchDescriptor<SDSyncRunLog>()
+    let actions: [SDSyncActionLog] = (try? modelContext.fetch(actionFetch)) ?? []
+    for action in actions { modelContext.delete(action) }
+    let runs: [SDSyncRunLog] = (try? modelContext.fetch(runFetch)) ?? []
+    for run in runs { modelContext.delete(run) }
+    try? modelContext.save()
   }
 }
 

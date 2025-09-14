@@ -9,8 +9,12 @@ enum SyncRules {
     f.formatOptions = [.withInternetDateTime]
     return f
   }()
+  /// Parsed marker metadata embedded by CalendarSync into event notes or URL.
+  /// - tuple: Optional legacy tuple/config identifier. Present for backwards compatibility.
+  /// - source: Source event identifier from the provider (EventKit's `eventIdentifier`).
+  /// - occ: ISO-8601 string of the instance's `occurrenceDate` to disambiguate recurrences.
   struct Marker: Equatable {
-    let tuple: String
+    let tuple: String?
     let source: String
     let occ: String
   }
@@ -20,14 +24,13 @@ enum SyncRules {
   ///   - sourceId: The EventKit event identifier.
   ///   - occurrenceDate: The `occurrenceDate` of the instance (preferred when present).
   ///   - startDate: Fallback when `occurrenceDate` is `nil`.
-  ///   - configId: Tuple id.
-  /// - Returns: `(sourceId, occISO, key)` where key is `tuple|sourceId|occISO`.
+  /// - Returns: `(sourceId, occISO, key)` where key is `sourceId|occISO`.
   static func occurrenceComponents(
-    sourceId: String, occurrenceDate: Date?, startDate: Date?, configId: UUID
+    sourceId: String, occurrenceDate: Date?, startDate: Date?
   ) -> (String, String, String) {
     let occ = occurrenceDate ?? startDate ?? Date()
     let occISO = isoFormatter.string(from: occ)
-    let key = "\(configId.uuidString)|\(sourceId)|\(occISO)"
+    let key = "\(sourceId)|\(occISO)"
     return (sourceId, occISO, key)
   }
 
@@ -50,7 +53,7 @@ enum SyncRules {
   }
 
   /// Extracts our embedded marker from notes or URL strings.
-  /// - Returns: Marker components if present.
+  /// - Returns: Marker components if present. Tuple is optional in newer versions.
   static func extractMarker(notes: String?, urlString: String?) -> Marker? {
     let candidates: [String] = [notes ?? "", urlString ?? ""]
     for c in candidates where !c.isEmpty {
@@ -62,7 +65,9 @@ enum SyncRules {
           let p = kv.split(separator: "=")
           if p.count == 2 { dict[String(p[0])] = String(p[1]) }
         }
-        if let t = dict["tuple"], let s = dict["source"], let o = dict["occ"] {
+        // Newer markers omit tuple entirely; accept when source+occ present.
+        if let s = dict["source"], let o = dict["occ"] {
+          let t = dict["tuple"]  // optional legacy tuple
           return Marker(tuple: t, source: s, occ: o)
         }
       }
@@ -207,9 +212,12 @@ enum SyncRules {
         if isAvailabilityBusy { return false }
 
       case .ignoreOtherTuples:
-        if let tag = extractMarker(notes: sourceNotes, urlString: sourceURLString),
-          tag.tuple != configId.uuidString
-        {
+        // Ignore events that were created by CalendarSync itself, identified by a descriptive note marker.
+        // Why: Users expect not to resync or duplicate already-synced/created events.
+        // Behavior change: Instead of tuple-based exclusion, treat any event whose description
+        // contains the human-readable phrase as a synced event and exclude it.
+        let notesValueLowercased = (sourceNotes ?? notes ?? "").lowercased()
+        if notesValueLowercased.contains("tobisk calendar sync".lowercased()) {
           return false
         }
       }
@@ -243,15 +251,14 @@ enum SyncRules {
   /// Deletion safety policy: only allow deleting targets we own.
   /// - Conditions:
   ///   1) Target is in the configured target calendar
-  ///   2) Target contains our marker (tuple matches)
-  ///   3) There is a mapping row for this occurrence (resilience against tag spoofing)
+  ///   2) Target contains our marker (any CalendarSync marker)
+  /// - Why: Dropping tuple/config coupling enables multiple computers to co-manage the same
+  ///   target calendar. Presence of the marker implies ownership by CalendarSync.
   static func safeToDeletePolicy(
-    configId: UUID, targetCalendarId: String, eventCalendarId: String, marker: Marker?,
-    hasMapping: Bool
+    targetCalendarId: String, eventCalendarId: String, marker: Marker?
   ) -> Bool {
     guard eventCalendarId == targetCalendarId else { return false }
-    guard let marker, marker.tuple == configId.uuidString else { return false }
-    return hasMapping
+    return marker != nil
   }
 
   private static func contains(_ str: String, pattern: String, cs: Bool) -> Bool {

@@ -476,7 +476,8 @@ struct SyncEditorView: View {
                     "",
                     selection: Binding(
                       get: { tw.start.asDate() },
-                      set: { newDate in twBinding.start.wrappedValue = TimeOfDay.from(date: newDate) }
+                      set: { newDate in twBinding.start.wrappedValue = TimeOfDay.from(date: newDate)
+                      }
                     ),
                     displayedComponents: .hourAndMinute
                   )
@@ -687,7 +688,8 @@ struct SyncEditorView: View {
   ///   - If none exist: seed with a standard 09:00–17:00 on Monday.
   private func addTimeWindow() {
     if let last = sync.timeWindows.sorted(by: { isTimeWindow($0, before: $1) }).last {
-      let new = TimeWindowUI(weekday: nextWeekday(after: last.weekday), start: last.start, end: last.end)
+      let new = TimeWindowUI(
+        weekday: nextWeekday(after: last.weekday), start: last.start, end: last.end)
       sync.timeWindows.append(new)
     } else {
       sync.timeWindows.append(

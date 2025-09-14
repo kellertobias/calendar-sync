@@ -155,7 +155,7 @@ enum FilterRuleType: String, Codable, CaseIterable, Identifiable {
     case .availabilityBusy: return "Availability is busy"
     case .availabilityFree: return "Availability is free"
 
-    case .ignoreOtherTuples: return "Ignore events from other tuples"
+    case .ignoreOtherTuples: return "Ignore Synced Events"
     }
   }
 }
