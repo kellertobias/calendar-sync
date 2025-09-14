@@ -32,6 +32,31 @@ final class SyncCoordinator: ObservableObject {
       do {
         for cfg in configs where cfg.enabled {
           let started = Date()
+
+          // Diagnostics: resolve calendar titles and authorization status up-front for clarity.
+          let store = EKEventStore()
+          let auth = EKEventStore.authorizationStatus(for: .event)
+          let authStr: String = {
+            switch auth {
+            case .fullAccess: return "fullAccess"
+            case .authorized: return "authorized"
+            case .writeOnly: return "writeOnly"
+            case .restricted: return "restricted"
+            case .denied: return "denied"
+            case .notDetermined: return "notDetermined"
+            @unknown default: return "unknown"
+            }
+          }()
+          let srcTitle =
+            store.calendar(withIdentifier: cfg.sourceCalendarId)?.title
+            ?? "<missing:(\(cfg.sourceCalendarId))>"
+          let tgtTitle =
+            store.calendar(withIdentifier: cfg.targetCalendarId)?.title
+            ?? "<missing:(\(cfg.targetCalendarId))>"
+          print(
+            "[Config] name=\(cfg.name) mode=\(cfg.mode) horizonDays=\(cfg.horizonDaysOverride ?? defaultHorizonDays) auth=\(authStr) source=\(srcTitle) target=\(tgtTitle)"
+          )
+
           let plan = engine.buildPlan(config: cfg, defaultHorizonDays: defaultHorizonDays)
           do {
             try engine.apply(config: cfg, plan: plan)

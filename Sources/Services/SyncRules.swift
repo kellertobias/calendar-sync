@@ -13,11 +13,13 @@ enum SyncRules {
     return f
   }()
   /// Parsed marker metadata embedded by CalendarSync into event notes or URL.
-  /// - tuple: Optional legacy tuple/config identifier. Present for backwards compatibility.
+  /// - tuple: Optional legacy/current tuple/config identifier. Present when available.
+  /// - name: Optional URL-encoded sync name for cross-device matching when tuple differs.
   /// - source: Source event identifier from the provider (EventKit's `eventIdentifier`).
   /// - occ: ISO-8601 string of the instance's `occurrenceDate` to disambiguate recurrences.
   struct Marker: Equatable {
     let tuple: String?
+    let name: String?
     let source: String
     let occ: String
   }
@@ -74,10 +76,11 @@ enum SyncRules {
           let value = String(kv[valueStart...])
           dict[key] = value
         }
-        // Newer markers omit tuple entirely; accept when source+occ present.
+        // Newer markers may omit tuple; accept when source+occ present.
         if let s = dict["source"], let o = dict["occ"] {
-          let t = dict["tuple"]  // optional legacy tuple
-          return Marker(tuple: t, source: s, occ: o)
+          let t = dict["tuple"]  // optional tuple (UUID string)
+          let n = dict["name"]  // optional URL-encoded sync name
+          return Marker(tuple: t, name: n, source: s, occ: o)
         }
       }
     }
@@ -257,17 +260,30 @@ enum SyncRules {
     return false
   }
 
-  /// Deletion safety policy: only allow deleting targets we own.
+  /// Deletion safety policy: only allow deleting targets we own for this specific sync.
   /// - Conditions:
   ///   1) Target is in the configured target calendar
-  ///   2) Target contains our marker (any CalendarSync marker)
-  /// - Why: Dropping tuple/config coupling enables multiple computers to co-manage the same
-  ///   target calendar. Presence of the marker implies ownership by CalendarSync.
+  ///   2) Target contains our marker
+  ///   3) The marker matches THIS sync by tuple (preferred) or by encoded name when tuple is absent/different
+  /// - Why: Prevent one sync from deleting items created by another sync (e.g., different machines).
   static func safeToDeletePolicy(
-    targetCalendarId: String, eventCalendarId: String, marker: Marker?
+    targetCalendarId: String,
+    eventCalendarId: String,
+    marker: Marker?,
+    expectedTupleId: UUID,
+    expectedEncodedName: String
   ) -> Bool {
-    guard eventCalendarId == targetCalendarId else { return false }
-    return marker != nil
+    guard eventCalendarId == targetCalendarId, let marker else { return false }
+    // Prefer tuple (UUID) match when present in the marker.
+    if let t = marker.tuple {
+      return t.lowercased() == expectedTupleId.uuidString.lowercased()
+    }
+    // Fallback: match by URL-encoded sync name when tuple is missing.
+    if let n = marker.name {
+      return n == expectedEncodedName
+    }
+    // No tuple or name → do not allow delete to avoid cross-sync interference.
+    return false
   }
 
   private static func contains(_ str: String, pattern: String, cs: Bool) -> Bool {

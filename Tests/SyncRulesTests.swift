@@ -25,6 +25,20 @@ final class SyncRulesTests: XCTestCase {
     XCTAssertEqual(m?.occ, "2025-09-16T09:00:00Z")
   }
 
+  func testExtractMarkerWithTupleAndName() {
+    let tuple = UUID()
+    let name = "Private -> Work"
+    let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+    let s =
+      "[CalendarSync] tuple=\(tuple.uuidString) name=\(encoded) source=SID/RID=123 occ=2025-09-16T09:00:00Z"
+    let m = SyncRules.extractMarker(notes: s, urlString: nil)
+    XCTAssertNotNil(m)
+    XCTAssertEqual(m?.tuple?.lowercased(), tuple.uuidString.lowercased())
+    XCTAssertEqual(m?.name, encoded)
+    XCTAssertEqual(m?.source, "SID/RID=123")
+    XCTAssertEqual(m?.occ, "2025-09-16T09:00:00Z")
+  }
+
   func testFiltersIncludeExclude() {
     let cfg = UUID()
     let include = FilterRuleUI(type: .includeTitle, pattern: "Standup", caseSensitive: false)

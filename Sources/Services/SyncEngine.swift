@@ -82,8 +82,14 @@ final class SyncEngine {
   }
 
   /// Marker inserted on created/managed target events.
-  private func marker(syncId: UUID, sourceId: String, occurrenceISO: String) -> String {
-    "[CalendarSync] source=\(sourceId) occ=\(occurrenceISO)"
+  /// - Format: "[CalendarSync] tuple=<UUID> name=<url-encoded> source=<id> occ=<ISO>"
+  /// - Note: `tuple` and `name` aid cross-config and cross-device ownership checks.
+  private func marker(syncId: UUID, syncName: String, sourceId: String, occurrenceISO: String)
+    -> String
+  {
+    let encodedName = syncName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+    return
+      "[CalendarSync] tuple=\(syncId.uuidString) name=\(encodedName) source=\(sourceId) occ=\(occurrenceISO)"
   }
 
   private func extractMarker(from event: EKEvent) -> SyncRules.Marker? {
@@ -98,9 +104,11 @@ final class SyncEngine {
     "Tobisk Calendar Sync — See more: https://github.com/kellertobias/calendar-sync — Do not remove this text; it is required for sync."
   }
 
-  private func brandedMarkerBlock(configId: UUID, sourceId: String, occurrenceISO: String) -> String
-  {
-    let tag = marker(syncId: configId, sourceId: sourceId, occurrenceISO: occurrenceISO)
+  private func brandedMarkerBlock(
+    configId: UUID, syncName: String, sourceId: String, occurrenceISO: String
+  ) -> String {
+    let tag = marker(
+      syncId: configId, syncName: syncName, sourceId: sourceId, occurrenceISO: occurrenceISO)
     return "\(brandingLine)\n\(tag)"
   }
 
@@ -349,10 +357,15 @@ final class SyncEngine {
     }
     func safeToDelete(_ te: EKEvent, key: String) -> Bool {
       let marker = extractMarker(from: te)
+      let expectedName =
+        config.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+        ?? ""
       return SyncRules.safeToDeletePolicy(
         targetCalendarId: config.targetCalendarId,
         eventCalendarId: te.calendar.calendarIdentifier,
-        marker: marker
+        marker: marker,
+        expectedTupleId: config.id,
+        expectedEncodedName: expectedName
       )
     }
 
@@ -434,9 +447,10 @@ final class SyncEngine {
         ev.calendar = targetCal
         copy(from: se, to: ev, mode: config.mode, template: config.blockerTitleTemplate)
         let (sourceId, occISO, _) = makeOccurrenceComponents(se)
-        let tag = marker(syncId: config.id, sourceId: sourceId, occurrenceISO: occISO)
+        let tag = marker(
+          syncId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
         let brandBlock = brandedMarkerBlock(
-          configId: config.id, sourceId: sourceId, occurrenceISO: occISO)
+          configId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
         ev.notes = appendBrandingIfMissing(originalNotes: se.notes, brandAndMarker: brandBlock)
         if ev.url == nil { ev.url = URL(string: tag) }
         try store.save(ev, span: .thisEvent)
@@ -475,9 +489,10 @@ final class SyncEngine {
           SyncRules.extractMarker(notes: te.notes, urlString: te.url?.absoluteString) != nil
         if !hasMarker {
           let (sourceId, occISO, _) = makeOccurrenceComponents(se)
-          let tag = marker(syncId: config.id, sourceId: sourceId, occurrenceISO: occISO)
+          let tag = marker(
+            syncId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
           let brandBlock = brandedMarkerBlock(
-            configId: config.id, sourceId: sourceId, occurrenceISO: occISO)
+            configId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
           te.notes = appendBrandingIfMissing(originalNotes: te.notes, brandAndMarker: brandBlock)
           if te.url == nil { te.url = URL(string: tag) }
         } else {
