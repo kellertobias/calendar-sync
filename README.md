@@ -35,6 +35,15 @@ If you want to run the app on multiple computers, make sure that you export the 
 
 You need to give the app the permissions to access your calendar. After this the app should restart. If it doesn't restart, you need to manually restart it.
 
+## Info on Development and AI Usage.
+
+I myself have not much experience with writing Swift and SwiftUI, so the code is not perfect.
+This app was vibe-coded with Cursor. It took around 20 hours to develop this app.
+
+The Model used was mainly GPT-5 in Thinking Mode.
+
+It took around 160 separate prompts to bring it to a usable state which turned out to be around one month of Cursor Pro included requests. (around 23$ of API costs)
+
 ## License
 
 MIT
