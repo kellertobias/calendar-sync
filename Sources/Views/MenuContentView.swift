@@ -97,7 +97,8 @@ struct MenuContentView: View {
     coordinator.syncNow(
       configs: appState.syncs,
       defaultHorizonDays: appState.defaultHorizonDays,
-      diagnosticsEnabled: appState.diagnosticsEnabled
+      diagnosticsEnabled: appState.diagnosticsEnabled,
+      tasksURL: appState.tasksURL.isEmpty ? nil : appState.tasksURL
     )
     // Intentionally do not copy status into appState to avoid stale reads; the UI derives
     // directly from `coordinator` for live progress and final timestamps.

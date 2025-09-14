@@ -210,11 +210,16 @@ import SwiftData
   var defaultHorizonDays: Int
   var intervalSeconds: Int
   var diagnosticsEnabled: Bool
+  var tasksURL: String
 
-  init(id: UUID = UUID(), defaultHorizonDays: Int, intervalSeconds: Int, diagnosticsEnabled: Bool) {
+  init(
+    id: UUID = UUID(), defaultHorizonDays: Int, intervalSeconds: Int, diagnosticsEnabled: Bool,
+    tasksURL: String = ""
+  ) {
     self.id = id
     self.defaultHorizonDays = defaultHorizonDays
     self.intervalSeconds = intervalSeconds
     self.diagnosticsEnabled = diagnosticsEnabled
+    self.tasksURL = tasksURL
   }
 }

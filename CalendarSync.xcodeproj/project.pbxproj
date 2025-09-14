@@ -12,6 +12,7 @@
 		1ABEF06702808505AC8EB7D8 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E26DC959A8B45F782AE489C2 /* AppState.swift */; };
 		1F81B6C8506569CCEE0DFF81 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841A7AF86D8E32E2B5AF333D /* SyncCoordinator.swift */; };
 		256988107211FB89542B1918 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */; };
+		2A1B2C3D4E5F6789ABCDEF01 /* TaskSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7890ABCDEF12 /* TaskSyncService.swift */; };
 		27C77B18EBC2942EA5C5F0A0 /* LogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F1C236DCC7181D97EB3F220 /* LogsView.swift */; };
 		3F9C27153EEC3924396429D1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E88BBF9C250DE065C5B5DE3 /* SettingsView.swift */; };
 		4F57AB9C90816AD0C9DEDD9A /* MenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D302C887AAC4A77B34A2F31A /* MenuContentView.swift */; };
@@ -59,6 +60,7 @@
 		BCFF5750D34DD3C796137508 /* EventKitCalendars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitCalendars.swift; sourceTree = "<group>"; };
 		C6E6AFEF696A8E60125AA8FA /* RunAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunAtLogin.swift; sourceTree = "<group>"; };
 		C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		1A2B3C4D5E6F7890ABCDEF12 /* TaskSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSyncService.swift; sourceTree = "<group>"; };
 		D302C887AAC4A77B34A2F31A /* MenuContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuContentView.swift; sourceTree = "<group>"; };
 		D418012FBDE6D6537B48B07C /* CalendarSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalendarSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCD54C2FDF715AE74B159000 /* SyncScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncScheduler.swift; sourceTree = "<group>"; };
@@ -85,6 +87,7 @@
 				040498EE3B975E6AFB86C8AF /* SchedulerHolder.swift */,
 				841A7AF86D8E32E2B5AF333D /* SyncCoordinator.swift */,
 				C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */,
+				1A2B3C4D5E6F7890ABCDEF12 /* TaskSyncService.swift */,
 				597B1861EE9756AA0B5859FB /* SyncRules.swift */,
 				DCD54C2FDF715AE74B159000 /* SyncScheduler.swift */,
 			);
@@ -260,6 +263,7 @@
 				3F9C27153EEC3924396429D1 /* SettingsView.swift in Sources */,
 				1F81B6C8506569CCEE0DFF81 /* SyncCoordinator.swift in Sources */,
 				256988107211FB89542B1918 /* SyncEngine.swift in Sources */,
+				2A1B2C3D4E5F6789ABCDEF01 /* TaskSyncService.swift in Sources */,
 				815451C233454ECEC8214ABC /* SyncListView.swift in Sources */,
 				C5539D4C8F0536D55D64AB91 /* SyncRules.swift in Sources */,
 				F0817FD23D67EA47E796E100 /* SyncScheduler.swift in Sources */,

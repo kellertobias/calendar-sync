@@ -39,6 +39,7 @@ final class SyncEngine {
   }
 
   private let store = EKEventStore()
+  private let reminderStore = EKEventStore()
   private let modelContext: ModelContext
   /// Logger used for purge diagnostics that are visible in the macOS unified console.
   /// - Subsystem: Uses the app bundle identifier when available to simplify filtering.
@@ -680,8 +681,8 @@ final class SyncEngine {
     )
 
     var total = 0
-    var details: [PurgedEventDetails] = []
-    var summaries: [PurgeCalendarSummary] = []
+    let details: [PurgedEventDetails] = []
+    let summaries: [PurgeCalendarSummary] = []
 
     var start = Date()
     var end = Date()
@@ -738,4 +739,100 @@ final class SyncEngine {
 
     return (total, details, summaries, authStatus)
   }
+
+  /// Fetches tasks/reminders from all calendars within the specified time horizon.
+  /// Only includes tasks that are not marked as completed AND have a due date assigned.
+  /// - Parameters:
+  ///   - horizonDays: Number of days to look ahead and behind from current date
+  /// - Returns: Array of task data suitable for sending to external systems
+  func fetchTasks(horizonDays: Int) async -> [TaskData] {
+    // Check authorization for reminders
+    let auth = EKEventStore.authorizationStatus(for: .reminder)
+    guard auth == .fullAccess || auth == .authorized else {
+      print("[Tasks] Authorization status is \(auth), cannot fetch tasks")
+      return []
+    }
+
+    let horizon = TimeInterval(horizonDays * 24 * 3600)
+    let windowStart = Date().addingTimeInterval(-horizon)  // Include past tasks
+    let windowEnd = Date().addingTimeInterval(horizon)  // Include future tasks
+
+    print("[Tasks] Fetching tasks from \(windowStart) to \(windowEnd)")
+
+    // Fetch all reminders
+    let predicate = reminderStore.predicateForReminders(in: nil)
+
+    return await withCheckedContinuation { continuation in
+      reminderStore.fetchReminders(matching: predicate) { reminders in
+        guard let reminders = reminders else {
+          print("[Tasks] Failed to fetch reminders")
+          continuation.resume(returning: [])
+          return
+        }
+
+        print("[Tasks] Found \(reminders.count) total reminders")
+        var tasks: [TaskData] = []
+
+        for reminder in reminders {
+          // Skip completed tasks
+          guard !reminder.isCompleted else {
+            continue
+          }
+
+          // Only include tasks that have a due date assigned
+          guard let dueDateComponents = reminder.dueDateComponents else {
+            continue
+          }
+
+          // Convert due date components to Date object
+          let calendar = Calendar.current
+          guard let dueDateObj = calendar.date(from: dueDateComponents) else {
+            continue
+          }
+
+          // Skip if due date is outside our horizon
+          if dueDateObj < windowStart || dueDateObj > windowEnd {
+            continue
+          }
+
+          // Create task data
+          let task = TaskData(
+            id: reminder.calendarItemIdentifier,
+            title: reminder.title ?? "Untitled Task",
+            notes: reminder.notes,
+            dueDate: dueDateObj,
+            priority: reminder.priority,
+            completed: reminder.isCompleted,
+            calendarTitle: reminder.calendar?.title ?? "Unknown Calendar",
+            calendarId: reminder.calendar?.calendarIdentifier ?? ""
+          )
+          tasks.append(task)
+          print("[Tasks] Added task: \(task.title) due \(task.dueDate ?? Date())")
+        }
+
+        print("[Tasks] Returning \(tasks.count) tasks")
+        continuation.resume(returning: tasks)
+      }
+    }
+  }
+}
+
+/// Represents a task/reminder for external system integration.
+struct TaskData: Codable {
+  /// Unique identifier of the task
+  let id: String
+  /// Title of the task
+  let title: String
+  /// Notes/description of the task
+  let notes: String?
+  /// Due date of the task (nil if no due date)
+  let dueDate: Date?
+  /// Priority level (0-9, where 0 is highest priority)
+  let priority: Int
+  /// Whether the task is completed
+  let completed: Bool
+  /// Name of the calendar this task belongs to
+  let calendarTitle: String
+  /// Identifier of the calendar this task belongs to
+  let calendarId: String
 }

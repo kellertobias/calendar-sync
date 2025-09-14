@@ -23,7 +23,11 @@ final class SyncCoordinator: ObservableObject {
   ///   - configs: Sync tuples to run.
   ///   - defaultHorizonDays: Default horizon used when config has no override.
   ///   - diagnosticsEnabled: When false, avoid persisting logs to SwiftData.
-  func syncNow(configs: [SyncConfigUI], defaultHorizonDays: Int, diagnosticsEnabled: Bool = true) {
+  ///   - tasksURL: Optional URL to send task data to via POST request.
+  func syncNow(
+    configs: [SyncConfigUI], defaultHorizonDays: Int, diagnosticsEnabled: Bool = true,
+    tasksURL: String? = nil
+  ) {
     Task { @MainActor in
       // Mark as actively syncing for UI feedback; ensure we reset even on early error.
       isSyncing = true
@@ -231,6 +235,40 @@ final class SyncCoordinator: ObservableObject {
             throw error
           }
         }
+
+        // Handle task sync if URL is provided
+        if let tasksURL = tasksURL, !tasksURL.isEmpty {
+          lastStatus.lastMessage = "Syncing tasks…"
+          do {
+            // Check if we have reminder access, if not, request it
+            let reminderAuth = EKEventStore.authorizationStatus(for: .reminder)
+            if reminderAuth == .notDetermined {
+              print("[TaskSync] Requesting reminder access...")
+              // Note: We can't request access from here as it needs to be done on the main thread
+              // and with proper user interaction. For now, we'll just log the issue.
+              print("[TaskSync] Reminder access not granted, skipping task sync")
+              lastStatus.lastMessage = "Task sync skipped - reminder access required"
+            } else if reminderAuth == .denied || reminderAuth == .restricted {
+              print("[TaskSync] Reminder access denied or restricted, skipping task sync")
+              lastStatus.lastMessage = "Task sync skipped - reminder access denied"
+            } else {
+              let tasks = await engine.fetchTasks(horizonDays: defaultHorizonDays)
+              let taskService = TaskSyncService()
+              let success = await taskService.sendTasks(tasks, to: tasksURL)
+              if success {
+                print("[TaskSync] Successfully sent \(tasks.count) tasks to \(tasksURL)")
+                lastStatus.lastMessage = "Task sync completed"
+              } else {
+                print("[TaskSync] Failed to send tasks to \(tasksURL)")
+                lastStatus.lastMessage = "Task sync failed"
+              }
+            }
+          } catch {
+            print("[TaskSync] Error during task sync: \(error.localizedDescription)")
+            lastStatus.lastMessage = "Task sync error"
+          }
+        }
+
         if diagnosticsEnabled { try? modelContext.save() }
         lastStatus.lastSuccessAt = Date()
         lastStatus.lastMessage = "Sync completed"

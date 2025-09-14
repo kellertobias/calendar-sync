@@ -30,5 +30,14 @@
     <string>Calendar Sync needs full access to read and write your calendars.</string>
     <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
     <string>Calendar Sync can write events to your calendars.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Calendar Sync can read your reminders to sync tasks to external systems.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Calendar Sync needs full access to read your reminders for task synchronization.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

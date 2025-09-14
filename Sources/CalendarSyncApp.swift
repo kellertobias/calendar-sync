@@ -45,8 +45,9 @@ struct CalendarSyncApp: App {
           coordinatorHolder.coordinator(modelContext: persistence.container.mainContext)
         )
         .task {
-          // Ensure syncs are loaded even if only the menu is opened.
+          // Ensure syncs and settings are loaded even if only the menu is opened.
           await loadSyncsFromPersistenceIfNeeded()
+          await loadAppSettingsFromPersistenceIfNeeded()
           calendars.reload(authorized: eventKitAuth.hasReadAccess)
           appState.availableCalendars = calendars.calendars
 
@@ -76,8 +77,9 @@ struct CalendarSyncApp: App {
         .task {
           calendars.reload(authorized: eventKitAuth.hasReadAccess)
           appState.availableCalendars = calendars.calendars
-          // Load syncs from SwiftData only once on first launch into this window.
+          // Load syncs and settings from SwiftData only once on first launch into this window.
           await loadSyncsFromPersistenceIfNeeded()
+          await loadAppSettingsFromPersistenceIfNeeded()
           schedulerHolder.scheduler(
             coordinator: coordinatorHolder.coordinator(
               modelContext: persistence.container.mainContext), appState: appState
@@ -99,6 +101,7 @@ struct CalendarSyncApp: App {
           calendars.reload(authorized: eventKitAuth.hasReadAccess)
           appState.availableCalendars = calendars.calendars
           await loadSyncsFromPersistenceIfNeeded()
+          await loadAppSettingsFromPersistenceIfNeeded()
           schedulerHolder.scheduler(
             coordinator: coordinatorHolder.coordinator(
               modelContext: persistence.container.mainContext), appState: appState
@@ -111,6 +114,16 @@ struct CalendarSyncApp: App {
         coordinator: coordinatorHolder.coordinator(modelContext: persistence.container.mainContext),
         appState: appState
       ).start()
+      saveAppSettings()
+    }
+    .onChange(of: appState.defaultHorizonDays) { _, _ in
+      saveAppSettings()
+    }
+    .onChange(of: appState.diagnosticsEnabled) { _, _ in
+      saveAppSettings()
+    }
+    .onChange(of: appState.tasksURL) { _, _ in
+      saveAppSettings()
     }
     .onChange(of: eventKitAuth.status) { _, _ in
       calendars.reload(authorized: eventKitAuth.hasReadAccess)
@@ -146,6 +159,61 @@ struct CalendarSyncApp: App {
       }
     } catch {
       // Best-effort; leave empty on failure to avoid ghost data.
+    }
+  }
+
+  /// Loads stored app settings into `appState` once to avoid ghost defaults.
+  @MainActor
+  private func loadAppSettingsFromPersistenceIfNeeded() async {
+    let context = persistence.container.mainContext
+    do {
+      let descriptor = FetchDescriptor<SDAppSettings>()
+      let stored = try context.fetch(descriptor)
+      if let settings = stored.first {
+        appState.defaultHorizonDays = settings.defaultHorizonDays
+        appState.intervalSeconds = settings.intervalSeconds
+        appState.diagnosticsEnabled = settings.diagnosticsEnabled
+        appState.tasksURL = settings.tasksURL
+      } else {
+        // Create default settings if none exist
+        let defaultSettings = SDAppSettings(
+          defaultHorizonDays: appState.defaultHorizonDays,
+          intervalSeconds: appState.intervalSeconds,
+          diagnosticsEnabled: appState.diagnosticsEnabled,
+          tasksURL: appState.tasksURL
+        )
+        context.insert(defaultSettings)
+        try? context.save()
+      }
+    } catch {
+      // Best-effort; leave defaults on failure to avoid ghost data.
+    }
+  }
+
+  /// Saves current app settings to persistence.
+  @MainActor
+  private func saveAppSettings() {
+    let context = persistence.container.mainContext
+    do {
+      let descriptor = FetchDescriptor<SDAppSettings>()
+      let stored = try context.fetch(descriptor)
+      if let settings = stored.first {
+        settings.defaultHorizonDays = appState.defaultHorizonDays
+        settings.intervalSeconds = appState.intervalSeconds
+        settings.diagnosticsEnabled = appState.diagnosticsEnabled
+        settings.tasksURL = appState.tasksURL
+      } else {
+        let newSettings = SDAppSettings(
+          defaultHorizonDays: appState.defaultHorizonDays,
+          intervalSeconds: appState.intervalSeconds,
+          diagnosticsEnabled: appState.diagnosticsEnabled,
+          tasksURL: appState.tasksURL
+        )
+        context.insert(newSettings)
+      }
+      try? context.save()
+    } catch {
+      // Best-effort; ignore failures to avoid disrupting user experience.
     }
   }
 }

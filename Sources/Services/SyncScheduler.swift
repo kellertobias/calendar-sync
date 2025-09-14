@@ -49,7 +49,8 @@ final class SyncScheduler: ObservableObject {
   private func runOnce() {
     coordinator.syncNow(
       configs: appState.syncs, defaultHorizonDays: appState.defaultHorizonDays,
-      diagnosticsEnabled: appState.diagnosticsEnabled)
+      diagnosticsEnabled: appState.diagnosticsEnabled,
+      tasksURL: appState.tasksURL.isEmpty ? nil : appState.tasksURL)
 
     // Heuristic: if last run message indicates failure, increase backoff
     let didFail =

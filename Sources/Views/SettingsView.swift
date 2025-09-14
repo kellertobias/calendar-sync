@@ -212,7 +212,7 @@ private struct SettingsDetail: View {
             Button("Open System Settings") { auth.openSystemSettings() }
             if !auth.hasReadAccess {
               Button("Relaunch App") { beginDelayedRelaunch() }
-                .help("Relaunch to ensure entitlements are applied if access doesn’t update.")
+                .help("Relaunch to ensure entitlements are applied if access doesn't update.")
             }
           }
           .padding(.vertical, 4)
@@ -228,6 +228,26 @@ private struct SettingsDetail: View {
                 .foregroundStyle(.secondary)
             }
           }
+
+          // Reminder Access Section
+          HStack(alignment: .firstTextBaseline) {
+            Text("Reminder Access").frame(width: labelWidth, alignment: .leading)
+            Text(auth.reminderStatusDescription)
+              .foregroundStyle(.secondary)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(.vertical, 4)
+          HStack(spacing: 12) {
+            Button("Request Reminder Access") {
+              auth.requestReminderAccess()
+            }
+            if !auth.hasReminderAccess {
+              Text("Required for task synchronization")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(.vertical, 4)
         }
 
         Divider()
@@ -265,6 +285,28 @@ private struct SettingsDetail: View {
           }
           Text(
             "Exports settings to a timestamped JSON in Application Support/Backups. Import replaces current sync configurations from the most recent settings JSON."
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        }
+
+        Divider()
+
+        // Tasks URL
+        Text("Tasks Integration").font(.headline)
+          .padding(.top, 16)
+          .padding(.bottom, 6)
+        VStack(alignment: .leading, spacing: 8) {
+          HStack(alignment: .firstTextBaseline) {
+            Text("Tasks URL").frame(width: labelWidth, alignment: .leading)
+            TextField("https://example.com/tasks", text: $appState.tasksURL)
+              .textFieldStyle(.roundedBorder)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(.vertical, 4)
+          Text(
+            "If this field is filled out, we will fetch the tasks scheduled for the sync time horizon as POST request to this URL"
           )
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -445,7 +487,8 @@ private struct SettingsDetail: View {
     coordinator.syncNow(
       configs: appState.syncs,
       defaultHorizonDays: appState.defaultHorizonDays,
-      diagnosticsEnabled: appState.diagnosticsEnabled
+      diagnosticsEnabled: appState.diagnosticsEnabled,
+      tasksURL: appState.tasksURL.isEmpty ? nil : appState.tasksURL
     )
   }
 
