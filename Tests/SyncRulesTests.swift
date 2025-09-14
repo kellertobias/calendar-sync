@@ -16,6 +16,15 @@ final class SyncRulesTests: XCTestCase {
     XCTAssertEqual(m?.source, "S2")
   }
 
+  func testExtractMarkerWithRIDInSource() {
+    // Source contains '/RID=...' which includes '=' inside the value; parser must split on first '=' only.
+    let s = "[CalendarSync] source=ABCDEF/RID=779706000 occ=2025-09-16T09:00:00Z"
+    let m = SyncRules.extractMarker(notes: s, urlString: nil)
+    XCTAssertNotNil(m)
+    XCTAssertEqual(m?.source, "ABCDEF/RID=779706000")
+    XCTAssertEqual(m?.occ, "2025-09-16T09:00:00Z")
+  }
+
   func testFiltersIncludeExclude() {
     let cfg = UUID()
     let include = FilterRuleUI(type: .includeTitle, pattern: "Standup", caseSensitive: false)

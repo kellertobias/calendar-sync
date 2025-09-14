@@ -4,9 +4,12 @@ import Foundation
 /// Why: Extracted from the sync engine to enable deterministic unit testing without EventKit.
 enum SyncRules {
   /// Shared ISO-8601 formatter for stable per-occurrence keys.
+  /// - Important: Time zone is forced to UTC to ensure keys are consistent across devices
+  ///   regardless of local time zone settings and daylight saving changes.
   private static let isoFormatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime]
+    f.timeZone = TimeZone(secondsFromGMT: 0)
     return f
   }()
   /// Parsed marker metadata embedded by CalendarSync into event notes or URL.
@@ -59,11 +62,17 @@ enum SyncRules {
     for c in candidates where !c.isEmpty {
       if let range = c.range(of: "[CalendarSync]") {
         let tail = c[range.lowerBound...]
+        // Tokenize by spaces; each token should be either the literal tag token or key=value pairs.
+        // Values can themselves contain '=' (e.g., "/RID=12345"). Therefore, split each token
+        // on the FIRST '=' only to preserve the remainder as the value.
         let comps = tail.split(separator: " ")
         var dict: [String: String] = [:]
         for kv in comps {
-          let p = kv.split(separator: "=")
-          if p.count == 2 { dict[String(p[0])] = String(p[1]) }
+          guard let eqIdx = kv.firstIndex(of: "=") else { continue }
+          let key = String(kv[..<eqIdx])
+          let valueStart = kv.index(after: eqIdx)
+          let value = String(kv[valueStart...])
+          dict[key] = value
         }
         // Newer markers omit tuple entirely; accept when source+occ present.
         if let s = dict["source"], let o = dict["occ"] {

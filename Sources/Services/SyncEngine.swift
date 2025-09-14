@@ -55,12 +55,15 @@ final class SyncEngine {
   /// Shared ISO-8601 formatter for stable per-occurrence keys.
   private lazy var isoFormatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
-    // Using internet date time ensures timezone and seconds; stable across runs.
+    // Using internet date time ensures timezone and seconds; stable across runs. Force UTC to avoid drift.
     f.formatOptions = [.withInternetDateTime]
+    f.timeZone = TimeZone(secondsFromGMT: 0)
     return f
   }()
 
   /// Builds stable components used to identify a specific occurrence of a source event.
+  /// - Important: Prefer a provider-stable external identifier when available to ensure
+  ///   cross-device consistency (prevents duplicates across multiple computers).
   /// - Returns: `(sourceId, occISO, key)` where key is `sourceId|occISO`.
   /// - Why: Recurring events share an identifier; `occurrenceDate` disambiguates instances.
   /// - Note: For detached overrides, EventKit sets `occurrenceDate` to the original instance date,
@@ -68,6 +71,9 @@ final class SyncEngine {
   private func makeOccurrenceComponents(_ event: EKEvent) -> (
     String, String, String
   ) {
+    // Prefer a cross-device stable identifier when present.
+    // `EKEvent` does not expose externalIdentifier publicly on macOS; eventIdentifier is used.
+    // To mitigate per-device variance, we couple it with an occurrence timestamp normalized to UTC.
     let sourceId = event.eventIdentifier ?? UUID().uuidString
     let occDate = event.occurrenceDate ?? event.startDate ?? Date()
     let occISO = isoFormatter.string(from: occDate)
@@ -91,6 +97,7 @@ final class SyncEngine {
   private var brandingLine: String {
     "Tobisk Calendar Sync — See more: https://github.com/kellertobias/calendar-sync — Do not remove this text; it is required for sync."
   }
+
   private func brandedMarkerBlock(configId: UUID, sourceId: String, occurrenceISO: String) -> String
   {
     let tag = marker(syncId: configId, sourceId: sourceId, occurrenceISO: occurrenceISO)
@@ -140,6 +147,11 @@ final class SyncEngine {
     let sourceEvents = store.events(matching: sourcePredicate)
     let targetEvents = store.events(matching: targetPredicate)
 
+    // DEBUG: High-level counts for visibility during troubleshooting.
+    print(
+      "[Plan] source=\(sourceEvents.count) target=\(targetEvents.count) horizonDays=\(config.horizonDaysOverride ?? defaultHorizonDays) mode=\(config.mode)"
+    )
+
     // Preload mappings for this config and index by composite key
     let mappingFetch = FetchDescriptor<SDEventMapping>(
       predicate: #Predicate { $0.syncConfigId == config.id }
@@ -159,6 +171,9 @@ final class SyncEngine {
     for te in targetEvents {
       if let tag = extractMarker(from: te) {
         let key = "\(tag.source)|\(tag.occ)"
+        if taggedTargets[key] != nil {
+          print("[TagDup] Duplicate tagged target for key=\(key) title=\(te.title ?? "-")")
+        }
         taggedTargets[key] = te
       }
     }
@@ -168,6 +183,9 @@ final class SyncEngine {
     for m in mappings {
       if let te = targetByIdentifier[m.targetEventIdentifier] {
         let key = "\(m.sourceEventIdentifier)|\(m.occurrenceDateKey)"
+        if mappedTargets[key] != nil {
+          print("[MapDup] Duplicate mapped target for key=\(key) title=\(te.title ?? "-")")
+        }
         mappedTargets[key] = te
       }
     }
@@ -262,9 +280,21 @@ final class SyncEngine {
     var liveKeys: Set<String> = []
     var allKeys: Set<String> = []
 
+    // Track duplicates from source enumeration within a single build pass.
+    var seenSourceKeys: Set<String> = []
+
     for se in sourceEvents {
-      let (_, _, rawKey) = makeOccurrenceComponents(se)
+      let (sid0, occ0, rawKey) = makeOccurrenceComponents(se)
       allKeys.insert(rawKey)
+      // Detect and skip duplicates within the same planning window.
+      if seenSourceKeys.contains(rawKey) {
+        print(
+          "[SrcDup] Duplicate source occurrence key=\(rawKey) title=\(se.title ?? "-") occ=\(occ0) sid=\(sid0)"
+        )
+        continue
+      }
+      seenSourceKeys.insert(rawKey)
+
       guard passesFilters(se), allowedByTimeWindows(se) else { continue }
       let (sourceId, occISO, key) = makeOccurrenceComponents(se)
       liveKeys.insert(key)
@@ -286,6 +316,7 @@ final class SyncEngine {
               lastUpdated: Date()
             )
             modelContext.insert(mapping)
+            print("[MapInsert] Inserted mapping sid=\(sourceId) occ=\(occISO) → target=\(targetId)")
           }
         }
         // Compare fields to see if update needed
@@ -295,11 +326,19 @@ final class SyncEngine {
           actions.append(
             PlanAction(kind: .update, source: se, target: te, reason: "Fields changed"))
           updated += 1
+          print(
+            "[Plan] UPDATE key=\(key) title=\(se.title ?? "-") start=\(se.startDate?.description ?? "-")"
+          )
+        } else {
+          print("[Plan] MATCH key=\(key) title=\(se.title ?? "-") (no change)")
         }
       } else {
         actions.append(
           PlanAction(kind: .create, source: se, target: nil, reason: "Missing in target"))
         created += 1
+        print(
+          "[Plan] CREATE key=\(key) title=\(se.title ?? "-") start=\(se.startDate?.description ?? "-")"
+        )
       }
     }
 
@@ -325,6 +364,7 @@ final class SyncEngine {
         actions.append(
           PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (mapped)"))
         deleted += 1
+        print("[Plan] DELETE (mapped) key=\(key) title=\(te.title ?? "-")")
       }
     }
     // From tags that are not mapped (legacy)
@@ -337,8 +377,11 @@ final class SyncEngine {
         actions.append(
           PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (tagged)"))
         deleted += 1
+        print("[Plan] DELETE (tagged) key=\(key) title=\(te.title ?? "-")")
       }
     }
+
+    print("[Plan] Summary created=\(created) updated=\(updated) deleted=\(deleted)")
 
     return PlanResult(actions: actions, created: created, updated: updated, deleted: deleted)
   }
@@ -397,6 +440,9 @@ final class SyncEngine {
         ev.notes = appendBrandingIfMissing(originalNotes: se.notes, brandAndMarker: brandBlock)
         if ev.url == nil { ev.url = URL(string: tag) }
         try store.save(ev, span: .thisEvent)
+        print(
+          "[Apply] CREATE saved title=\(ev.title ?? "-") key=\(sourceId)|\(occISO) id=\(ev.eventIdentifier ?? "-")"
+        )
         // Verify the event exists after save to catch silent no-ops.
         if let savedId = ev.eventIdentifier {
           if store.event(withIdentifier: savedId) == nil {
@@ -419,6 +465,7 @@ final class SyncEngine {
             lastUpdated: Date()
           )
           modelContext.insert(mapping)
+          print("[MapInsert] After create sid=\(sourceId) occ=\(occISO) → target=\(targetId)")
         }
       case .update:
         guard let se = action.source, let te = action.target else { continue }
@@ -441,6 +488,7 @@ final class SyncEngine {
           }
         }
         try store.save(te, span: .thisEvent)
+        print("[Apply] UPDATE saved title=\(te.title ?? "-") id=\(te.eventIdentifier ?? "-")")
         // Upsert mapping on update in case identifiers rotated
         if let targetId = te.eventIdentifier {
           let (sourceId, occISO, _) = makeOccurrenceComponents(se)
@@ -478,6 +526,7 @@ final class SyncEngine {
                 ])
             }
           }
+          print("[Apply] DELETE removed title=\(te.title ?? "-") id=\(te.eventIdentifier ?? "-")")
           // Best-effort cleanup of mapping for this target id
           if let targetId = te.eventIdentifier {
             let fetch = FetchDescriptor<SDEventMapping>(
