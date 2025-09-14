@@ -62,8 +62,10 @@ final class SyncEngine {
   }()
 
   /// Builds stable components used to identify a specific occurrence of a source event.
-  /// - Important: Prefer a provider-stable external identifier when available to ensure
-  ///   cross-device consistency (prevents duplicates across multiple computers).
+  /// - Important:
+  ///   - EventKit's `eventIdentifier` can differ across devices and can rotate.
+  ///   - We mitigate this by combining the identifier with a UTC-normalized occurrence timestamp.
+  ///   - This makes keys stable for recurring events across computers when internal state is cleared.
   /// - Returns: `(sourceId, occISO, key)` where key is `sourceId|occISO`.
   /// - Why: Recurring events share an identifier; `occurrenceDate` disambiguates instances.
   /// - Note: For detached overrides, EventKit sets `occurrenceDate` to the original instance date,
@@ -71,10 +73,19 @@ final class SyncEngine {
   private func makeOccurrenceComponents(_ event: EKEvent) -> (
     String, String, String
   ) {
-    // Prefer a cross-device stable identifier when present.
-    // `EKEvent` does not expose externalIdentifier publicly on macOS; eventIdentifier is used.
-    // To mitigate per-device variance, we couple it with an occurrence timestamp normalized to UTC.
-    let sourceId = event.eventIdentifier ?? UUID().uuidString
+    // Identifier selection policy:
+    // - macOS EventKit does not expose an externalIdentifier for events like iOS can in some contexts.
+    // - Use `eventIdentifier` when available; otherwise, fall back to a synthesized, deterministic ID
+    //   derived from salient immutable fields so we do not create a new UUID each pass.
+    // - This fallback helps when source events are produced from read-only feeds that do not expose IDs.
+    let sourceId: String = {
+      if let id = event.eventIdentifier, !id.isEmpty { return id }
+      // Deterministic synthesized id: title|start|end in UTC
+      let title = event.title ?? ""
+      let s = event.startDate.map { isoFormatter.string(from: $0) } ?? "-"
+      let e = event.endDate.map { isoFormatter.string(from: $0) } ?? "-"
+      return "syn:" + title + "|" + s + "|" + e
+    }()
     let occDate = event.occurrenceDate ?? event.startDate ?? Date()
     let occISO = isoFormatter.string(from: occDate)
     let key = "\(sourceId)|\(occISO)"
@@ -308,7 +319,36 @@ final class SyncEngine {
       liveKeys.insert(key)
       let teFromMapping = mappedTargets[key]
       let teFromTag = teFromMapping == nil ? taggedTargets[key] : nil
-      if let te = teFromMapping ?? teFromTag {
+      // Cross-device fallback:
+      // If neither mapping nor exact tag match exists, look for a target that has the same
+      // occurrence timestamp within this sync (marker.occ match) even when sourceId differs
+      // due to per-device `eventIdentifier` variance. If exactly one candidate is found, treat it as
+      // the match and migrate mapping to its current target identifier.
+      let teFromOccurrenceOnly: EKEvent? = {
+        guard teFromMapping == nil && teFromTag == nil else { return nil }
+        // Scan tagged targets and pick those whose marker.occ equals occISO and tuple/name matches config
+        var candidates: [EKEvent] = []
+        for te in targetEvents {
+          guard let m = extractMarker(from: te) else { continue }
+          // Require same occurrence timestamp
+          guard m.occ == occISO else { continue }
+          // Only consider events created by this sync instance (tuple or encoded name match)
+          let expectedName =
+            config.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+          let owned = SyncRules.safeToDeletePolicy(
+            targetCalendarId: config.targetCalendarId,
+            eventCalendarId: te.calendar.calendarIdentifier,
+            marker: m,
+            expectedTupleId: config.id,
+            expectedEncodedName: expectedName
+          )
+          guard owned else { continue }
+          candidates.append(te)
+        }
+        if candidates.count == 1 { return candidates[0] }
+        return nil
+      }()
+      if let te = teFromMapping ?? teFromTag ?? teFromOccurrenceOnly {
         // If discovered only via tag, migrate to mapping for resilience
         if teFromMapping == nil, let targetId = te.eventIdentifier {
           let exists = mappings.contains {
