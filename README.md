@@ -8,7 +8,7 @@ I had the issue that I am using google calendar for my personal calendar while n
 
 It is a macOS menu bar app, that uses the calendar framework to sync events between multiple calendars. You can setup multiple syncs, with different filters and time windows.
 
-Feel free to clone the code and build it after installing xcode and running the `./build.sh` script or download the latest release from the [releases page](https://github.com/kellerh/calendar-sync/releases).
+Feel free to clone the code and build it after installing xcode and running the `./install.sh` script or download the latest release from the [releases page](https://github.com/kellerh/calendar-sync/releases).
 
 This app is vibe-coded - use at your own risk.
 
@@ -22,15 +22,18 @@ This app is vibe-coded - use at your own risk.
 - Recurrence + exceptions with per-occurrence mapping
 - Filters: include/exclude, regex, ignore other tuples
 - Weekday/time windows; blocker-only mode
-- Safe tagging in notes/url plus SwiftData mapping table
+- Tagging in Event Notes for safe sync even from multiple computers
 - Diagnostics logs (levels), filter and export (JSON/Text)
 - Scheduler with configurable interval; manual Sync Now
 - Run at Login toggle
 
+## Running on multiple computers
+
+If you want to run the app on multiple computers, make sure that you export the settings and import them on the other computers. The explicit IDs from the sync tuples are used to identify the events and align them to the correct events on the other computers.
+
 ## Troubleshooting
 
-You need to give the app the permissions to access your calendar. After this the app should restart.
-If it doesn't restart, you need to manually restart it.
+You need to give the app the permissions to access your calendar. After this the app should restart. If it doesn't restart, you need to manually restart it.
 
 ## License
 
