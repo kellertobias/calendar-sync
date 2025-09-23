@@ -214,3 +214,36 @@ struct TimeWindowUI: Identifiable, Codable, Hashable {
   var start: TimeOfDay
   var end: TimeOfDay
 }
+
+/// Action to take when a rule matches an invitation.
+/// - accept: Auto-accept the invitation (if supported); otherwise record intent.
+/// - decline: Auto-decline the invitation (if supported); otherwise record intent.
+enum RuleAction: String, Codable, CaseIterable, Identifiable {
+  case accept
+  case decline
+  var id: String { rawValue }
+}
+
+/// UI-facing model representing an auto-RSVP rule.
+/// Why: Keeps UI and persistence decoupled and reuses filter/time-window semantics.
+struct RuleConfigUI: Identifiable, Hashable, Codable {
+  var id: UUID = UUID()
+  /// Human-friendly label for the rule (e.g., "Vacation blocks", "Working hours accept").
+  var name: String
+  /// Calendar to watch for incoming invitations (where the RSVP applies).
+  var watchCalendarId: String
+  /// Action to take when conditions are satisfied.
+  var action: RuleAction
+  /// Whether this rule is active.
+  var enabled: Bool
+  /// When non-empty, filters applied to the invitation itself (title, notes, organizer, etc.).
+  var invitationFilters: [FilterRuleUI] = []
+  /// Optional conditions describing events that must overlap the invitation to trigger the rule.
+  /// Example: all-day busy events with title "Vacation".
+  var overlapFilters: [FilterRuleUI] = []
+  /// Optional time windows in local time that must allow the action for it to apply.
+  var timeWindows: [TimeWindowUI] = []
+  /// Timestamps for bookkeeping and sorting.
+  var createdAt: Date = Date()
+  var updatedAt: Date = Date()
+}

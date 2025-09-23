@@ -47,6 +47,7 @@ struct CalendarSyncApp: App {
         .task {
           // Ensure syncs and settings are loaded even if only the menu is opened.
           await loadSyncsFromPersistenceIfNeeded()
+          await loadRulesFromPersistenceIfNeeded()
           await loadAppSettingsFromPersistenceIfNeeded()
           calendars.reload(authorized: eventKitAuth.hasReadAccess)
           appState.availableCalendars = calendars.calendars
@@ -79,6 +80,7 @@ struct CalendarSyncApp: App {
           appState.availableCalendars = calendars.calendars
           // Load syncs and settings from SwiftData only once on first launch into this window.
           await loadSyncsFromPersistenceIfNeeded()
+          await loadRulesFromPersistenceIfNeeded()
           await loadAppSettingsFromPersistenceIfNeeded()
           schedulerHolder.scheduler(
             coordinator: coordinatorHolder.coordinator(
@@ -101,6 +103,7 @@ struct CalendarSyncApp: App {
           calendars.reload(authorized: eventKitAuth.hasReadAccess)
           appState.availableCalendars = calendars.calendars
           await loadSyncsFromPersistenceIfNeeded()
+          await loadRulesFromPersistenceIfNeeded()
           await loadAppSettingsFromPersistenceIfNeeded()
           schedulerHolder.scheduler(
             coordinator: coordinatorHolder.coordinator(
@@ -156,6 +159,22 @@ struct CalendarSyncApp: App {
       let stored = try context.fetch(descriptor)
       if !stored.isEmpty {
         appState.syncs = stored.map { $0.toUI() }
+      }
+    } catch {
+      // Best-effort; leave empty on failure to avoid ghost data.
+    }
+  }
+
+  /// Loads stored rules into `appState.rules` once to avoid ghost defaults.
+  @MainActor
+  private func loadRulesFromPersistenceIfNeeded() async {
+    if !appState.rules.isEmpty { return }
+    let context = persistence.container.mainContext
+    do {
+      let descriptor = FetchDescriptor<SDRuleConfig>(sortBy: [SortDescriptor(\.name)])
+      let stored = try context.fetch(descriptor)
+      if !stored.isEmpty {
+        appState.rules = stored.map { $0.toUI() }
       }
     } catch {
       // Best-effort; leave empty on failure to avoid ghost data.

@@ -55,6 +55,7 @@ struct SyncListView: View {
       }
       .toolbar {
         Button(action: { appState.addSync() }) { Label("New Sync", systemImage: "plus") }
+        Button(action: { appState.addRule() }) { Label("New Rule", systemImage: "checkmark.seal") }
         Button(action: { if let sel = selection { appState.deleteSync(id: sel) } }) {
           Label("Delete", systemImage: "trash")
         }

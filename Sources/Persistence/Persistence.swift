@@ -11,6 +11,7 @@ final class Persistence: ObservableObject {
       SDSyncConfig.self,
       SDFilterRule.self,
       SDTimeWindow.self,
+      SDRuleConfig.self,
       SDEventMapping.self,
       SDSyncRunLog.self,
       // Include per-action log rows so LogsView can fetch actions by run id.

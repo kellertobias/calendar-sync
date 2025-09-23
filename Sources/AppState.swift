@@ -11,9 +11,14 @@ final class AppState: ObservableObject {
   /// In-memory sync configurations backing the UI.
   /// Note: Starts empty and is populated from persistence on app launch to avoid ghost entries.
   @Published var syncs: [SyncConfigUI] = []
+  /// In-memory RSVP rules backing the UI.
+  /// Note: Loaded from persistence on app launch similar to syncs.
+  @Published var rules: [RuleConfigUI] = []
 
   /// Currently selected sync in the Syncs window (shared across views).
   @Published var selectedSyncId: UUID? = nil
+  /// Currently selected rule in the Settings window sidebar.
+  @Published var selectedRuleId: UUID? = nil
 
   /// Settings scaffolding
   @Published var defaultHorizonDays: Int = 14
@@ -48,5 +53,22 @@ final class AppState: ObservableObject {
   /// Deletes a sync configuration by id.
   func deleteSync(id: UUID) {
     syncs.removeAll { $0.id == id }
+  }
+
+  /// Adds a new default rule configuration.
+  func addRule() {
+    let new = RuleConfigUI(
+      name: "New Rule",
+      watchCalendarId: "",
+      action: .decline,
+      enabled: false
+    )
+    rules.append(new)
+    selectedRuleId = new.id
+  }
+
+  /// Deletes a rule configuration by id.
+  func deleteRule(id: UUID) {
+    rules.removeAll { $0.id == id }
   }
 }

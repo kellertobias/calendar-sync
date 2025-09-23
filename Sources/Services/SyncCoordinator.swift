@@ -34,6 +34,9 @@ final class SyncCoordinator: ObservableObject {
       lastStatus.lastMessage = "Syncing…"
       defer { isSyncing = false }
       do {
+        // Evaluate invitation rules before/after sync to keep responses timely.
+        evaluateInvitationRules()
+
         for cfg in configs where cfg.enabled {
           let started = Date()
 
@@ -269,12 +272,79 @@ final class SyncCoordinator: ObservableObject {
           }
         }
 
+        // Persist logs and rule decision notes if any
         if diagnosticsEnabled { try? modelContext.save() }
         lastStatus.lastSuccessAt = Date()
         lastStatus.lastMessage = "Sync completed"
       } catch {
         lastStatus.lastFailureAt = Date()
         lastStatus.lastMessage = "Sync failed: \(error.localizedDescription)"
+      }
+    }
+  }
+
+  /// Scans pending invitations and evaluates configured rules to determine auto-accept/decline intents.
+  /// Note: EventKit does not expose a public API to programmatically change RSVP. We record decisions in logs only.
+  private func evaluateInvitationRules(horizonDays: Int = 60) {
+    // Load rules
+    let fetch = FetchDescriptor<SDRuleConfig>(sortBy: [SortDescriptor(\.name)])
+    let ruleModels: [SDRuleConfig] = (try? modelContext.fetch(fetch)) ?? []
+    let rules = ruleModels.map { $0.toUI() }.filter { $0.enabled }
+    guard !rules.isEmpty else { return }
+
+    let store = EKEventStore()
+    let windowStart = Date().addingTimeInterval(-24 * 3600) // include recent past
+    let windowEnd = Date().addingTimeInterval(TimeInterval(horizonDays * 24 * 3600))
+
+    // Group rules by watch calendar
+    let rulesByCalendar = Dictionary(grouping: rules, by: { $0.watchCalendarId })
+    for (calId, calRules) in rulesByCalendar {
+      guard let cal = store.calendar(withIdentifier: calId) else { continue }
+      let pred = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: [cal])
+      let events = store.events(matching: pred)
+      let pendingInvites = events.filter { InvitationRules.isPendingInvitation($0) }
+      guard !pendingInvites.isEmpty else { continue }
+
+      for ev in pendingInvites {
+        // Evaluate per-rule applicability
+        var accepts: [UUID] = []
+        var declines: [UUID] = []
+        for r in calRules {
+          let passes = InvitationRules.passesInvitationFilters(ev, filters: r.invitationFilters, configId: r.id)
+          let timeOK = InvitationRules.allowedByWindows(ev, windows: r.timeWindows)
+          // Overlap search across all calendars for now
+          let overlapOK = r.overlapFilters.isEmpty || InvitationRules.hasQualifyingOverlap(
+            store: store, ev: ev, calendars: nil, filters: r.overlapFilters, configId: r.id)
+          if passes && timeOK && overlapOK {
+            switch r.action {
+            case .accept: accepts.append(r.id)
+            case .decline: declines.append(r.id)
+            }
+          }
+        }
+
+        // Resolve decision: only if all applicable rules agree on the same action.
+        let anyAccept = !accepts.isEmpty
+        let anyDecline = !declines.isEmpty
+        let decision: String?
+        if anyAccept && !anyDecline { decision = "accept" }
+        else if anyDecline && !anyAccept { decision = "decline" }
+        else { decision = nil }
+
+        // Log intent only (no programmatic RSVP available via EventKit)
+        if let decision = decision {
+          let log = SDSyncRunLog(
+            id: UUID(),
+            syncConfigId: UUID(),
+            startedAt: Date(),
+            finishedAt: Date(),
+            resultRaw: "success",
+            levelRaw: "info",
+            created: 0, updated: 0, deleted: 0,
+            message: "Rule intent: \(decision) invitation ‘\(ev.title ?? "(No title)")’ at \(ev.startDate?.description ?? "?")"
+          )
+          modelContext.insert(log)
+        }
       }
     }
   }

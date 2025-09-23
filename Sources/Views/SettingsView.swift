@@ -8,10 +8,12 @@ import UniformTypeIdentifiers
 
 enum SettingsSidebarItem: Hashable, Identifiable {
   case sync(UUID)
+  case rule(UUID)
   case settings
   var id: String {
     switch self {
     case .sync(let id): return "sync-\(id.uuidString)"
+    case .rule(let id): return "rule-\(id.uuidString)"
     case .settings: return "settings"
     }
   }
@@ -25,6 +27,7 @@ struct SettingsView: View {
   @EnvironmentObject var coordinator: SyncCoordinator
   @Environment(\.modelContext) private var context
   @Query(sort: \SDSyncConfig.name) private var storedSyncs: [SDSyncConfig]
+  @Query(sort: \SDRuleConfig.name) private var storedRules: [SDRuleConfig]
 
   var body: some View {
     NavigationSplitView {
@@ -35,6 +38,11 @@ struct SettingsView: View {
             addSync()
           } label: {
             Label("New Sync", systemImage: "plus")
+          }
+          Button {
+            addRule()
+          } label: {
+            Label("New Rule", systemImage: "checkmark.seal")
           }
           Button(role: .destructive) {
             deleteSelectedSync()
@@ -78,16 +86,43 @@ struct SettingsView: View {
               }
             }
           }
+          Section("Rules") {
+            if appState.rules.isEmpty {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("No rules configured").foregroundStyle(.secondary)
+                Text("Click ‘New Rule’ above to create your first rule.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            } else {
+              ForEach(appState.rules) { rule in
+                NavigationLink(value: SettingsSidebarItem.rule(rule.id)) {
+                  HStack {
+                    VStack(alignment: .leading) {
+                      Text(rule.name)
+                      Text(rule.action == .accept ? "Auto-accept" : "Auto-decline")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("Enabled", isOn: binding(for: rule).enabled)
+                      .labelsHidden()
+                  }
+                }
+                .contextMenu {
+                  Button("Delete", role: .destructive) { appState.deleteRule(id: rule.id) }
+                }
+              }
+            }
+          }
         }
         .safeAreaInset(edge: .bottom) {
-          VStack {
-            Button {
-              selection = .settings
-            } label: {
-              Label("Settings", systemImage: "gearshape")
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
+          Button {
+            selection = .settings
+          } label: {
+            Label("Settings", systemImage: "gearshape")
           }
+          .frame(maxWidth: .infinity, alignment: .center)
           .padding(.horizontal)
           .padding(.vertical, 8)
           .background(.bar)
@@ -109,6 +144,19 @@ struct SettingsView: View {
         } else {
           ContentUnavailableView("Select a Sync", systemImage: "calendar")
         }
+      case .rule(let id):
+        if let rule = appState.rules.first(where: { $0.id == id }) {
+          ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+              RuleEditorView(rule: binding(for: rule), onRequestSettings: { selection = .settings })
+                .padding()
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+          ContentUnavailableView("Select a Rule", systemImage: "checkmark.seal")
+        }
       case .settings, .none:
         SettingsDetail()
       }
@@ -118,9 +166,12 @@ struct SettingsView: View {
       auth.refreshStatus()
       calendars.reload(authorized: auth.hasReadAccess)
       appState.availableCalendars = calendars.calendars
-      // If syncs are empty but we have stored models, load them to avoid ghost defaults.
+      // If syncs/rules are empty but we have stored models, load them to avoid ghost defaults.
       if appState.syncs.isEmpty && !storedSyncs.isEmpty {
         appState.syncs = storedSyncs.map { $0.toUI() }
+      }
+      if appState.rules.isEmpty && !storedRules.isEmpty {
+        appState.rules = storedRules.map { $0.toUI() }
       }
     }
     // Persist changes to syncs even when editing from Settings view.
@@ -158,6 +209,35 @@ struct SettingsView: View {
       }
       try? context.save()
     }
+    .onChange(of: appState.rules) { _, newValue in
+      let existingById = Dictionary(uniqueKeysWithValues: storedRules.map { ($0.id, $0) })
+      var seen: Set<UUID> = []
+      for ui in newValue {
+        seen.insert(ui.id)
+        if let existing = existingById[ui.id] {
+          existing.name = ui.name
+          existing.watchCalendarId = ui.watchCalendarId
+          existing.actionRaw = ui.action.rawValue
+          existing.enabled = ui.enabled
+          existing.updatedAt = Date()
+          existing.invitationFilters = ui.invitationFilters.map {
+            SDFilterRule(id: $0.id, typeRaw: $0.type.rawValue, pattern: $0.pattern, caseSensitive: $0.caseSensitive)
+          }
+          existing.overlapFilters = ui.overlapFilters.map {
+            SDFilterRule(id: $0.id, typeRaw: $0.type.rawValue, pattern: $0.pattern, caseSensitive: $0.caseSensitive)
+          }
+          existing.timeWindows = ui.timeWindows.map {
+            SDTimeWindow(id: $0.id, weekdayRaw: $0.weekday.rawValue, startHour: $0.start.hour, startMinute: $0.start.minute, endHour: $0.end.hour, endMinute: $0.end.minute)
+          }
+        } else {
+          context.insert(SDRuleConfig.fromUI(ui))
+        }
+      }
+      for model in storedRules where !seen.contains(model.id) {
+        context.delete(model)
+      }
+      try? context.save()
+    }
   }
 
   private func addSync() {
@@ -171,9 +251,24 @@ struct SettingsView: View {
     }
   }
 
+  private func addRule() {
+    appState.addRule()
+    if let last = appState.rules.last { selection = .rule(last.id) }
+  }
+
+  private func binding(for rule: RuleConfigUI) -> Binding<RuleConfigUI> {
+    guard let idx = appState.rules.firstIndex(of: rule) else { return .constant(rule) }
+    return $appState.rules[idx]
+  }
+
   private func binding(for sync: SyncConfigUI) -> Binding<SyncConfigUI> {
     guard let idx = appState.syncs.firstIndex(of: sync) else { return .constant(sync) }
     return $appState.syncs[idx]
+  }
+
+  private func binding(for rule: RuleConfigUI) -> Binding<RuleConfigUI> {
+    guard let idx = appState.rules.firstIndex(of: rule) else { return .constant(rule) }
+    return $appState.rules[idx]
   }
 }
 

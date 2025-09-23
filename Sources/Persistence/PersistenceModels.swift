@@ -77,6 +77,48 @@ import SwiftData
   }
 }
 
+@Model final class SDRuleConfig {
+  @Attribute(.unique) var id: UUID
+  var name: String
+  /// Calendar identifier to watch for incoming invitations.
+  var watchCalendarId: String
+  /// Serialized RuleAction
+  var actionRaw: String
+  var enabled: Bool
+  var createdAt: Date
+  var updatedAt: Date
+  /// Filters applied to the invitation event itself
+  @Relationship(deleteRule: .cascade) var invitationFilters: [SDFilterRule]
+  /// Filters applied to overlapping existing events used as conditions
+  @Relationship(deleteRule: .cascade) var overlapFilters: [SDFilterRule]
+  /// Time windows gate when the rule applies
+  @Relationship(deleteRule: .cascade) var timeWindows: [SDTimeWindow]
+
+  init(
+    id: UUID,
+    name: String,
+    watchCalendarId: String,
+    actionRaw: String,
+    enabled: Bool,
+    createdAt: Date,
+    updatedAt: Date,
+    invitationFilters: [SDFilterRule],
+    overlapFilters: [SDFilterRule],
+    timeWindows: [SDTimeWindow]
+  ) {
+    self.id = id
+    self.name = name
+    self.watchCalendarId = watchCalendarId
+    self.actionRaw = actionRaw
+    self.enabled = enabled
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.invitationFilters = invitationFilters
+    self.overlapFilters = overlapFilters
+    self.timeWindows = timeWindows
+  }
+}
+
 @Model final class SDEventMapping {
   var id: UUID
   var syncConfigId: UUID
