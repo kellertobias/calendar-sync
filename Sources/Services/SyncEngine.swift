@@ -68,11 +68,21 @@ final class SyncEngine {
   /// - Format: "<sha256(syncName)>-<sha256(title|occISO)>" (lowercase hex)
   /// - Why: Avoids relying on provider-specific identifiers that differ across devices.
   private func computeSyncKey(syncName: String, title: String?, occISO: String) -> String {
+    // Namespace is a SHA-256 of the sync name. It prefixes the key and establishes ownership.
+    // Why: Multiple syncs may share a target calendar. Keys must be partitioned per-sync so that
+    // one sync never cleans up items created by another. We enforce this by checking the prefix.
     let ns = SHA256.hash(data: Data(syncName.utf8)).compactMap { String(format: "%02x", $0) }.joined()
     let basis = (title ?? "") + "|" + occISO
     let digest = SHA256.hash(data: Data(basis.utf8))
     let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
     return "\(ns)-\(hashHex)"
+  }
+
+  /// Computes the stable namespace prefix used in `key` for a given sync configuration name.
+  /// - Important: This prefix MUST be used to assert ownership when considering deletions,
+  ///   ensuring normal sync runs never remove items produced by other syncs.
+  private func computeSyncNamespace(syncName: String) -> String {
+    SHA256.hash(data: Data(syncName.utf8)).compactMap { String(format: "%02x", $0) }.joined()
   }
 
   /// Builds stable components used to identify a specific occurrence of a source event.
@@ -355,13 +365,16 @@ final class SyncEngine {
       }
     }
 
-    // Deletions: consider both mapped and tagged targets, but require ownership safety
+    // Deletions: only consider key-tagged targets that are OWNED by this sync's namespace.
+    // Why: Prevents removing items created by other syncs that share the same target calendar.
     func safeToDelete(_ te: EKEvent, key: String) -> Bool {
-      // Only allow deleting items from the configured target calendar and with any marker present.
-      let marker = extractMarker(from: te)
-      return te.calendar.calendarIdentifier == config.targetCalendarId && marker != nil
+      // Must be in the configured target calendar.
+      guard te.calendar.calendarIdentifier == config.targetCalendarId else { return false }
+      // Ownership: key must start with this sync's namespace prefix.
+      let ns = computeSyncNamespace(syncName: config.name)
+      return key.hasPrefix(ns + "-")
     }
-    // Key-only deletion
+    // Key-only deletion with namespace ownership check
     for te in targetEvents {
       guard let m = extractMarker(from: te), let k = m.key else { continue }
       guard safeToDelete(te, key: k) else { continue }
