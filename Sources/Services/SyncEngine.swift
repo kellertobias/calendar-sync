@@ -2,6 +2,7 @@ import EventKit
 import Foundation
 import OSLog
 import SwiftData
+import CryptoKit
 
 /// Computes and applies one-way sync actions for a single configuration.
 /// Supports Full and Blocker modes, filters, weekday/time windows, and tagging.
@@ -62,6 +63,18 @@ final class SyncEngine {
     return f
   }()
 
+  /// Computes a stable sync key from the sync name and the source event's
+  /// title combined with the UTC-normalized occurrence start.
+  /// - Format: "<sha256(syncName)>-<sha256(title|occISO)>" (lowercase hex)
+  /// - Why: Avoids relying on provider-specific identifiers that differ across devices.
+  private func computeSyncKey(syncName: String, title: String?, occISO: String) -> String {
+    let ns = SHA256.hash(data: Data(syncName.utf8)).compactMap { String(format: "%02x", $0) }.joined()
+    let basis = (title ?? "") + "|" + occISO
+    let digest = SHA256.hash(data: Data(basis.utf8))
+    let hashHex = digest.compactMap { String(format: "%02x", $0) }.joined()
+    return "\(ns)-\(hashHex)"
+  }
+
   /// Builds stable components used to identify a specific occurrence of a source event.
   /// - Important:
   ///   - EventKit's `eventIdentifier` can differ across devices and can rotate.
@@ -94,14 +107,10 @@ final class SyncEngine {
   }
 
   /// Marker inserted on created/managed target events.
-  /// - Format: "[CalendarSync] tuple=<UUID> name=<url-encoded> source=<id> occ=<ISO>"
-  /// - Note: `tuple` and `name` aid cross-config and cross-device ownership checks.
-  private func marker(syncId: UUID, syncName: String, sourceId: String, occurrenceISO: String)
-    -> String
-  {
-    let encodedName = syncName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-    return
-      "[CalendarSync] tuple=\(syncId.uuidString) name=\(encodedName) source=\(sourceId) occ=\(occurrenceISO)"
+  /// - Format: "[CalendarSync] key=<nameHash>-<contentHash>"
+  /// - Note: Only the key is emitted to avoid leaking identifiers.
+  private func marker(key: String) -> String {
+    return "[CalendarSync] key=\(key)"
   }
 
   private func extractMarker(from event: EKEvent) -> SyncRules.Marker? {
@@ -116,11 +125,8 @@ final class SyncEngine {
     "Tobisk Calendar Sync — See more: https://github.com/kellertobias/calendar-sync — Do not remove this text; it is required for sync."
   }
 
-  private func brandedMarkerBlock(
-    configId: UUID, syncName: String, sourceId: String, occurrenceISO: String
-  ) -> String {
-    let tag = marker(
-      syncId: configId, syncName: syncName, sourceId: sourceId, occurrenceISO: occurrenceISO)
+  private func brandedMarkerBlock(key: String) -> String {
+    let tag = marker(key: key)
     return "\(brandingLine)\n\(tag)"
   }
 
@@ -186,15 +192,22 @@ final class SyncEngine {
       }
     }
 
-    // Index target by (sourceId, occ) via tags
+    // Index target by stable key when present (new scheme) and legacy composite key
+    var keyTargets: [String: EKEvent] = [:]
     var taggedTargets: [String: EKEvent] = [:]
     for te in targetEvents {
       if let tag = extractMarker(from: te) {
-        let key = "\(tag.source)|\(tag.occ)"
-        if taggedTargets[key] != nil {
-          print("[TagDup] Duplicate tagged target for key=\(key) title=\(te.title ?? "-")")
+        if let k = tag.key {
+          if keyTargets[k] != nil {
+            print("[KeyDup] Duplicate key-tagged target key=\(k) title=\(te.title ?? "-")")
+          }
+          keyTargets[k] = te
         }
-        taggedTargets[key] = te
+        let legacyKey = "\(tag.source)|\(tag.occ)"
+        if taggedTargets[legacyKey] != nil {
+          print("[TagDup] Duplicate tagged target for key=\(legacyKey) title=\(te.title ?? "-")")
+        }
+        taggedTargets[legacyKey] = te
       }
     }
 
@@ -294,18 +307,19 @@ final class SyncEngine {
     var deleted = 0
 
     // Build sets of keys from source occurrences:
-    // - liveKeys: only those that pass filters/time windows (used for create/update)
-    // - allKeys: all occurrences regardless of filters (used to avoid unsafe deletes
-    //            when the source still exists but is merely filtered out)
-    var liveKeys: Set<String> = []
-    var allKeys: Set<String> = []
+    // - liveLegacyKeys: composite source|occ keys that pass filters (legacy)
+    // - allLegacyKeys: all composite keys regardless of filters (safety net to avoid churn)
+    // - liveSyncKeys: new stable keys <sync-id>-<hash(title|occISO)>
+    var liveLegacyKeys: Set<String> = []
+    var allLegacyKeys: Set<String> = []
+    var liveSyncKeys: Set<String> = []
 
     // Track duplicates from source enumeration within a single build pass.
     var seenSourceKeys: Set<String> = []
 
     for se in sourceEvents {
       let (sid0, occ0, rawKey) = makeOccurrenceComponents(se)
-      allKeys.insert(rawKey)
+      allLegacyKeys.insert(rawKey)
       // Detect and skip duplicates within the same planning window.
       if seenSourceKeys.contains(rawKey) {
         print(
@@ -316,58 +330,12 @@ final class SyncEngine {
       seenSourceKeys.insert(rawKey)
 
       guard passesFilters(se), allowedByTimeWindows(se) else { continue }
-      let (sourceId, occISO, key) = makeOccurrenceComponents(se)
-      liveKeys.insert(key)
-      let teFromMapping = mappedTargets[key]
-      let teFromTag = teFromMapping == nil ? taggedTargets[key] : nil
-      // Cross-device fallback:
-      // If neither mapping nor exact tag match exists, look for a target that has the same
-      // occurrence timestamp within this sync (marker.occ match) even when sourceId differs
-      // due to per-device `eventIdentifier` variance. If exactly one candidate is found, treat it as
-      // the match and migrate mapping to its current target identifier.
-      let teFromOccurrenceOnly: EKEvent? = {
-        guard teFromMapping == nil && teFromTag == nil else { return nil }
-        // Scan tagged targets and pick those whose marker.occ equals occISO and tuple/name matches config
-        var candidates: [EKEvent] = []
-        for te in targetEvents {
-          guard let m = extractMarker(from: te) else { continue }
-          // Require same occurrence timestamp
-          guard m.occ == occISO else { continue }
-          // Only consider events created by this sync instance (tuple or encoded name match)
-          let expectedName =
-            config.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-          let owned = SyncRules.safeToDeletePolicy(
-            targetCalendarId: config.targetCalendarId,
-            eventCalendarId: te.calendar.calendarIdentifier,
-            marker: m,
-            expectedTupleId: config.id,
-            expectedEncodedName: expectedName
-          )
-          guard owned else { continue }
-          candidates.append(te)
-        }
-        if candidates.count == 1 { return candidates[0] }
-        return nil
-      }()
-      if let te = teFromMapping ?? teFromTag ?? teFromOccurrenceOnly {
-        // If discovered only via tag, migrate to mapping for resilience
-        if teFromMapping == nil, let targetId = te.eventIdentifier {
-          let exists = mappings.contains {
-            $0.sourceEventIdentifier == sourceId && $0.occurrenceDateKey == occISO
-          }
-          if !exists {
-            let mapping = SDEventMapping(
-              id: UUID(),
-              syncConfigId: config.id,
-              sourceEventIdentifier: sourceId,
-              occurrenceDateKey: occISO,
-              targetEventIdentifier: targetId,
-              lastUpdated: Date()
-            )
-            modelContext.insert(mapping)
-            print("[MapInsert] Inserted mapping sid=\(sourceId) occ=\(occISO) → target=\(targetId)")
-          }
-        }
+      let (sourceId, occISO, legacyKey) = makeOccurrenceComponents(se)
+      liveLegacyKeys.insert(legacyKey)
+      let syncKey = computeSyncKey(syncName: config.name, title: se.title, occISO: occISO)
+      liveSyncKeys.insert(syncKey)
+      let teFromKey = keyTargets[syncKey]
+      if let te = teFromKey {
         // Compare fields to see if update needed
         if needsUpdate(
           source: se, target: te, mode: config.mode, template: config.blockerTitleTemplate)
@@ -375,63 +343,32 @@ final class SyncEngine {
           actions.append(
             PlanAction(kind: .update, source: se, target: te, reason: "Fields changed"))
           updated += 1
-          print(
-            "[Plan] UPDATE key=\(key) title=\(se.title ?? "-") start=\(se.startDate?.description ?? "-")"
-          )
+          print("[Plan] UPDATE key=\(syncKey) title=\(se.title ?? "-") start=\(se.startDate?.description ?? "-")")
         } else {
-          print("[Plan] MATCH key=\(key) title=\(se.title ?? "-") (no change)")
+          print("[Plan] MATCH key=\(syncKey) title=\(se.title ?? "-") (no change)")
         }
       } else {
         actions.append(
           PlanAction(kind: .create, source: se, target: nil, reason: "Missing in target"))
         created += 1
-        print(
-          "[Plan] CREATE key=\(key) title=\(se.title ?? "-") start=\(se.startDate?.description ?? "-")"
-        )
+        print("[Plan] CREATE key=\(syncKey) title=\(se.title ?? "-") start=\(se.startDate?.description ?? "-")")
       }
     }
 
     // Deletions: consider both mapped and tagged targets, but require ownership safety
-    func hasMapping(for key: String) -> Bool {
-      mappedTargets[key] != nil
-        || mappings.contains { "\($0.sourceEventIdentifier)|\($0.occurrenceDateKey)" == key }
-    }
     func safeToDelete(_ te: EKEvent, key: String) -> Bool {
+      // Only allow deleting items from the configured target calendar and with any marker present.
       let marker = extractMarker(from: te)
-      let expectedName =
-        config.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-        ?? ""
-      return SyncRules.safeToDeletePolicy(
-        targetCalendarId: config.targetCalendarId,
-        eventCalendarId: te.calendar.calendarIdentifier,
-        marker: marker,
-        expectedTupleId: config.id,
-        expectedEncodedName: expectedName
-      )
+      return te.calendar.calendarIdentifier == config.targetCalendarId && marker != nil
     }
-
-    // From mappings
-    for (key, te) in mappedTargets {
-      // Only consider deletion when the source occurrence no longer exists at all.
-      // If the source still exists (but is filtered out), keep the target to avoid churn.
-      if !liveKeys.contains(key) && !allKeys.contains(key) && safeToDelete(te, key: key) {
-        actions.append(
-          PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (mapped)"))
-        deleted += 1
-        print("[Plan] DELETE (mapped) key=\(key) title=\(te.title ?? "-")")
-      }
-    }
-    // From tags that are not mapped (legacy)
+    // Key-only deletion
     for te in targetEvents {
-      guard let tag = extractMarker(from: te) else { continue }
-      let key = "\(tag.source)|\(tag.occ)"
-      if mappedTargets[key] == nil && !liveKeys.contains(key) && !allKeys.contains(key)
-        && safeToDelete(te, key: key)
-      {
-        actions.append(
-          PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (tagged)"))
+      guard let m = extractMarker(from: te), let k = m.key else { continue }
+      guard safeToDelete(te, key: k) else { continue }
+      if !liveSyncKeys.contains(k) {
+        actions.append(PlanAction(kind: .delete, source: nil, target: te, reason: "Source missing (key)"))
         deleted += 1
-        print("[Plan] DELETE (tagged) key=\(key) title=\(te.title ?? "-")")
+        print("[Plan] DELETE (key) key=\(k) title=\(te.title ?? "-")")
       }
     }
 
@@ -488,10 +425,9 @@ final class SyncEngine {
         ev.calendar = targetCal
         copy(from: se, to: ev, mode: config.mode, template: config.blockerTitleTemplate)
         let (sourceId, occISO, _) = makeOccurrenceComponents(se)
-        let tag = marker(
-          syncId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
-        let brandBlock = brandedMarkerBlock(
-          configId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
+        let syncKey = computeSyncKey(syncName: config.name, title: se.title, occISO: occISO)
+        let tag = marker(key: syncKey)
+        let brandBlock = brandedMarkerBlock(key: syncKey)
         ev.notes = appendBrandingIfMissing(originalNotes: se.notes, brandAndMarker: brandBlock)
         if ev.url == nil { ev.url = URL(string: tag) }
         try store.save(ev, span: .thisEvent)
@@ -529,11 +465,10 @@ final class SyncEngine {
         let hasMarker =
           SyncRules.extractMarker(notes: te.notes, urlString: te.url?.absoluteString) != nil
         if !hasMarker {
-          let (sourceId, occISO, _) = makeOccurrenceComponents(se)
-          let tag = marker(
-            syncId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
-          let brandBlock = brandedMarkerBlock(
-            configId: config.id, syncName: config.name, sourceId: sourceId, occurrenceISO: occISO)
+          let (_, occISO, _) = makeOccurrenceComponents(se)
+          let syncKey = computeSyncKey(syncName: config.name, title: se.title, occISO: occISO)
+          let tag = marker(key: syncKey)
+          let brandBlock = brandedMarkerBlock(key: syncKey)
           te.notes = appendBrandingIfMissing(originalNotes: te.notes, brandAndMarker: brandBlock)
           if te.url == nil { te.url = URL(string: tag) }
         } else {

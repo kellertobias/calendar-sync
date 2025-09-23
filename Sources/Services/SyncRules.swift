@@ -17,11 +17,13 @@ enum SyncRules {
   /// - name: Optional URL-encoded sync name for cross-device matching when tuple differs.
   /// - source: Source event identifier from the provider (EventKit's `eventIdentifier`).
   /// - occ: ISO-8601 string of the instance's `occurrenceDate` to disambiguate recurrences.
+  /// - key: Optional stable sync key `<sync-id>-<hash>` introduced to avoid per-device IDs.
   struct Marker: Equatable {
     let tuple: String?
     let name: String?
-    let source: String
-    let occ: String
+    let source: String?
+    let occ: String?
+    let key: String?
   }
 
   /// Builds stable components used to identify a specific occurrence of a source event.
@@ -58,7 +60,7 @@ enum SyncRules {
   }
 
   /// Extracts our embedded marker from notes or URL strings.
-  /// - Returns: Marker components if present. Tuple is optional in newer versions.
+  /// - Returns: Marker components if present. Accepts key-only markers.
   static func extractMarker(notes: String?, urlString: String?) -> Marker? {
     let candidates: [String] = [notes ?? "", urlString ?? ""]
     for c in candidates where !c.isEmpty {
@@ -76,11 +78,14 @@ enum SyncRules {
           let value = String(kv[valueStart...])
           dict[key] = value
         }
-        // Newer markers may omit tuple; accept when source+occ present.
-        if let s = dict["source"], let o = dict["occ"] {
-          let t = dict["tuple"]  // optional tuple (UUID string)
-          let n = dict["name"]  // optional URL-encoded sync name
-          return Marker(tuple: t, name: n, source: s, occ: o)
+        // Accept when any of the known fields are present; allow key-only markers.
+        let t = dict["tuple"]
+        let n = dict["name"]
+        let s = dict["source"]
+        let o = dict["occ"]
+        let k = dict["key"]
+        if t != nil || n != nil || s != nil || o != nil || k != nil {
+          return Marker(tuple: t, name: n, source: s, occ: o, key: k)
         }
       }
     }
@@ -260,12 +265,7 @@ enum SyncRules {
     return false
   }
 
-  /// Deletion safety policy: only allow deleting targets we own for this specific sync.
-  /// - Conditions:
-  ///   1) Target is in the configured target calendar
-  ///   2) Target contains our marker
-  ///   3) The marker matches THIS sync by tuple (preferred) or by encoded name when tuple is absent/different
-  /// - Why: Prevent one sync from deleting items created by another sync (e.g., different machines).
+  /// Deletion safety policy: no longer used for tuple/name matching. Retained for back-compat callers.
   static func safeToDeletePolicy(
     targetCalendarId: String,
     eventCalendarId: String,
@@ -273,17 +273,10 @@ enum SyncRules {
     expectedTupleId: UUID,
     expectedEncodedName: String
   ) -> Bool {
-    guard eventCalendarId == targetCalendarId, let marker else { return false }
-    // Prefer tuple (UUID) match when present in the marker.
-    if let t = marker.tuple {
-      return t.lowercased() == expectedTupleId.uuidString.lowercased()
-    }
-    // Fallback: match by URL-encoded sync name when tuple is missing.
-    if let n = marker.name {
-      return n == expectedEncodedName
-    }
-    // No tuple or name → do not allow delete to avoid cross-sync interference.
-    return false
+    // Legacy behavior removed: only calendar equality remains relevant here; ownership by key is
+    // enforced by callers using the `key` prefix match.
+    guard eventCalendarId == targetCalendarId, let _ = marker else { return false }
+    return true
   }
 
   private static func contains(_ str: String, pattern: String, cs: Bool) -> Bool {
