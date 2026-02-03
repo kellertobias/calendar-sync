@@ -215,154 +215,154 @@ struct SyncEditorView: View {
     // Why: Improves visual hierarchy and ensures the first field is immediately visible when adding a sync.
     HStack(alignment: .top, spacing: 16) {
       // LEFT: Editor form
-      Form {
-        // Basic
-        Section(header: sectionHeader("Basic").padding(.top, 14).padding(.bottom, 4)) {
-          // Name label above field, with Enabled toggle kept inline to the right for quick access.
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Name").padding(.horizontal, fieldLabelLeading / 2)
-            HStack {
-              TextField("", text: $sync.name, prompt: Text("Name"))
-                .padding(.vertical, 4)
-              Toggle(isOn: $sync.enabled) { Text("Enabled") }
-            }
-          }
-          .padding(.leading, fieldLabelLeading)
-          // Source and Target side-by-side for quicker scanning and less vertical space.
-          HStack(alignment: .top, spacing: 24) {
-            // Source selection using a Menu (reliably renders icons/colors on macOS)
-            CalendarMenuPicker(
-              title: "Source",
-              calendars: appState.availableCalendars,
-              selection: $sync.sourceCalendarId,
-              writableOnly: false
-            )
-            .disabled(!auth.hasReadAccess)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Target selection (writable only)
-            CalendarMenuPicker(
-              title: "Target",
-              calendars: appState.availableCalendars,
-              selection: $sync.targetCalendarId,
-              writableOnly: true
-            )
-            .disabled(!auth.hasReadAccess)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          }
-          if !auth.hasReadAccess {
+      ScrollView {
+        Form {
+          // Basic
+          Section(header: sectionHeader("Basic").padding(.top, 14).padding(.bottom, 4)) {
+            // Name label above field, with Enabled toggle kept inline to the right for quick access.
             VStack(alignment: .leading, spacing: 4) {
-              Text("Calendar access is required to select calendars.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Button("Open Settings to request access") { onRequestSettings?() }
-                .font(.caption)
-            }
-          }
-          if sync.sourceCalendarId == sync.targetCalendarId && !sync.sourceCalendarId.isEmpty {
-            Text("Source and target must differ").font(.caption).foregroundStyle(.red)
-          }
-        }
-
-        // Sync Mode
-        Section(header: sectionHeader("Sync Mode").padding(.top, 24).padding(.bottom, 4)) {
-          // Hide the inline "Mode" label for a cleaner look under the section heading.
-          Picker("", selection: $sync.mode) {
-            Text("Full info").tag(SyncMode.full)
-            Text("Private events").tag(SyncMode.privateEvents)
-            Text("Blocker-only").tag(SyncMode.blocker)
-          }
-          .labelsHidden()
-          .padding(.vertical, 4)
-          if sync.mode == .blocker {
-            // Show label above template field to match Name layout for consistency.
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Blocker Title Template").padding(.horizontal, fieldLabelLeading / 2)
-              TextField(
-                "",
-                text: Binding(
-                  get: { sync.blockerTitleTemplate ?? "" },
-                  set: { sync.blockerTitleTemplate = $0.isEmpty ? nil : $0 }
-                ), prompt: Text("Blocker Title Template")
-              )
-              .padding(.vertical, 4)
-            }
-            .padding(.leading, fieldLabelLeading)
-            Text(
-              "Use placeholders like {sourceTitle} to include the source event’s title in the blocker title."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.vertical, 2)
-          }
-        }
-
-        // Lookahead (per-sync horizon override)
-        // Why: Allow a sync to look further ahead or closer in than the app default when
-        //      planning which future events to mirror. This writes to `horizonDaysOverride`,
-        //      which is an optional to indicate "use default" when nil.
-        Section(header: sectionHeader("Lookahead").padding(.top, 24).padding(.bottom, 4)) {
-          // Layout: Two explicit rows for clarity and alignment.
-          // Row 1: Standard checkbox with label to the right (Toggle manages layout).
-          // Row 2: Days label on the left; Stepper aligned to the right when override is enabled.
-          VStack(alignment: .leading, spacing: 6) {
-            // Row 1 — Override toggle
-            HStack(alignment: .firstTextBaseline) {
-              Toggle(
-                "Override lookahead",
-                isOn: Binding(
-                  get: { sync.horizonDaysOverride != nil },
-                  set: { isOn in
-                    if isOn {
-                      // Initialize with a sane value: keep existing override if present,
-                      // otherwise seed with the app default. Enforce minimum of 1 day.
-                      sync.horizonDaysOverride = max(
-                        sync.horizonDaysOverride ?? appState.defaultHorizonDays, 1)
-                    } else {
-                      // Clearing the override falls back to the app default horizon.
-                      sync.horizonDaysOverride = nil
-                    }
-                  }
-                )
-              )
-              .padding(.vertical, 4)
-              Spacer()
-            }
-            .padding(.leading, fieldLabelLeading)
-
-            // Row 2 — Value row
-            HStack(alignment: .firstTextBaseline) {
-              let days = sync.horizonDaysOverride ?? appState.defaultHorizonDays
-              Text("\(days) days")
-                .foregroundStyle(sync.horizonDaysOverride == nil ? .secondary : .primary)
-              Spacer()
-              if sync.horizonDaysOverride != nil {
-                Stepper(
-                  "",
-                  value: Binding(
-                    get: { sync.horizonDaysOverride ?? appState.defaultHorizonDays },
-                    set: { newVal in sync.horizonDaysOverride = newVal }
-                  ), in: 1...365
-                )
-                .labelsHidden()
+              Text("Name").padding(.horizontal, fieldLabelLeading / 2)
+              HStack {
+                TextField("", text: $sync.name, prompt: Text("Name"))
+                  .padding(.vertical, 4)
+                Toggle(isOn: $sync.enabled) { Text("Enabled") }
               }
             }
             .padding(.leading, fieldLabelLeading)
+            // Source and Target side-by-side for quicker scanning and less vertical space.
+            HStack(alignment: .top, spacing: 24) {
+              // Source selection using a Menu (reliably renders icons/colors on macOS)
+              CalendarMenuPicker(
+                title: "Source",
+                calendars: appState.availableCalendars,
+                selection: $sync.sourceCalendarId,
+                writableOnly: false
+              )
+              .disabled(!auth.hasReadAccess)
+              .padding(.vertical, 4)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              // Target selection (writable only)
+              CalendarMenuPicker(
+                title: "Target",
+                calendars: appState.availableCalendars,
+                selection: $sync.targetCalendarId,
+                writableOnly: true
+              )
+              .disabled(!auth.hasReadAccess)
+              .padding(.vertical, 4)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !auth.hasReadAccess {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Calendar access is required to select calendars.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Button("Open Settings to request access") { onRequestSettings?() }
+                  .font(.caption)
+              }
+            }
+            if sync.sourceCalendarId == sync.targetCalendarId && !sync.sourceCalendarId.isEmpty {
+              Text("Source and target must differ").font(.caption).foregroundStyle(.red)
+            }
           }
-          Text(
-            "How far into the future to look when planning this sync. Leave off to use the app default."
-          )
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        }
 
-        // Filters
-        // Why: After a filter is added via the "Add Filter" menu, the attribute cannot be changed inline.
-        //      Users adjust only the operator (appropriate to that attribute) and the value.
-        //      Layout: Title row (attribute + delete), Operator row (picker), Value row (input), divider.
-        Section(header: sectionHeader("Filters").padding(.top, 24).padding(.bottom, 4)) {
-          VStack(alignment: .leading, spacing: 8) {
+          // Sync Mode
+          Section(header: sectionHeader("Sync Mode").padding(.top, 24).padding(.bottom, 4)) {
+            // Hide the inline "Mode" label for a cleaner look under the section heading.
+            Picker("", selection: $sync.mode) {
+              Text("Full info").tag(SyncMode.full)
+              Text("Private events").tag(SyncMode.privateEvents)
+              Text("Blocker-only").tag(SyncMode.blocker)
+            }
+            .labelsHidden()
+            .padding(.vertical, 4)
+            if sync.mode == .blocker {
+              // Show label above template field to match Name layout for consistency.
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Blocker Title Template").padding(.horizontal, fieldLabelLeading / 2)
+                TextField(
+                  "",
+                  text: Binding(
+                    get: { sync.blockerTitleTemplate ?? "" },
+                    set: { sync.blockerTitleTemplate = $0.isEmpty ? nil : $0 }
+                  ), prompt: Text("Blocker Title Template")
+                )
+                .padding(.vertical, 4)
+              }
+              .padding(.leading, fieldLabelLeading)
+              Text(
+                "Use placeholders like {sourceTitle} to include the source event’s title in the blocker title."
+              )
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .padding(.vertical, 2)
+            }
+          }
+
+          // Lookahead (per-sync horizon override)
+          // Why: Allow a sync to look further ahead or closer in than the app default when
+          //      planning which future events to mirror. This writes to `horizonDaysOverride`,
+          //      which is an optional to indicate "use default" when nil.
+          Section(header: sectionHeader("Lookahead").padding(.top, 24).padding(.bottom, 4)) {
+            // Layout: Two explicit rows for clarity and alignment.
+            // Row 1: Standard checkbox with label to the right (Toggle manages layout).
+            // Row 2: Days label on the left; Stepper aligned to the right when override is enabled.
+            VStack(alignment: .leading, spacing: 6) {
+              // Row 1 — Override toggle
+              HStack(alignment: .firstTextBaseline) {
+                Toggle(
+                  "Override lookahead",
+                  isOn: Binding(
+                    get: { sync.horizonDaysOverride != nil },
+                    set: { isOn in
+                      if isOn {
+                        // Initialize with a sane value: keep existing override if present,
+                        // otherwise seed with the app default. Enforce minimum of 1 day.
+                        sync.horizonDaysOverride = max(
+                          sync.horizonDaysOverride ?? appState.defaultHorizonDays, 1)
+                      } else {
+                        // Clearing the override falls back to the app default horizon.
+                        sync.horizonDaysOverride = nil
+                      }
+                    }
+                  )
+                )
+                .padding(.vertical, 4)
+                Spacer()
+              }
+              .padding(.leading, fieldLabelLeading)
+
+              // Row 2 — Value row
+              HStack(alignment: .firstTextBaseline) {
+                let days = sync.horizonDaysOverride ?? appState.defaultHorizonDays
+                Text("\(days) days")
+                  .foregroundStyle(sync.horizonDaysOverride == nil ? .secondary : .primary)
+                Spacer()
+                if sync.horizonDaysOverride != nil {
+                  Stepper(
+                    "",
+                    value: Binding(
+                      get: { sync.horizonDaysOverride ?? appState.defaultHorizonDays },
+                      set: { newVal in sync.horizonDaysOverride = newVal }
+                    ), in: 1...365
+                  )
+                  .labelsHidden()
+                }
+              }
+              .padding(.leading, fieldLabelLeading)
+            }
+            Text(
+              "How far into the future to look when planning this sync. Leave off to use the app default."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          }
+
+          // Filters
+          // Why: After a filter is added via the "Add Filter" menu, the attribute cannot be changed inline.
+          //      Users adjust only the operator (appropriate to that attribute) and the value.
+          //      Layout: Title row (attribute + delete), Operator row (picker), Value row (input), divider.
+          Section(header: sectionHeader("Filters").padding(.top, 24).padding(.bottom, 4)) {
             ForEach($sync.filters) { $rule in
               VStack(alignment: .leading, spacing: 12) {
                 // Title row: Attribute summary (immutable) + delete button on the right.
@@ -402,11 +402,10 @@ struct SyncEditorView: View {
                   }
                   Spacer()
                 }
-
-                Divider()
               }
               .padding(.vertical, 6)
             }
+
             HStack {
               Menu("Add Filter") {
                 // First level: Property → second level: Operation
@@ -448,74 +447,74 @@ struct SyncEditorView: View {
               }
             }
           }
-        }
 
-        Section(header: sectionHeader("Time Windows").padding(.top, 24).padding(.bottom, 4)) {
-          VStack(alignment: .leading, spacing: 8) {
-            // Display windows sorted by weekday, then by start time while preserving element bindings.
-            // How: Sort indices instead of values, then bind with $sync.timeWindows[idx].
-            let sortedIndices = sync.timeWindows
-              .enumerated()
-              .sorted { isTimeWindow($0.element, before: $1.element) }
-              .map { $0.offset }
-            ForEach(sortedIndices, id: \.self) { idx in
-              let twBinding = $sync.timeWindows[idx]
-              let tw = sync.timeWindows[idx]
-              HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("Day")
-                  Picker("", selection: twBinding.weekday) {
-                    ForEach(Weekday.allCases) { d in Text(d.label).tag(d) }
+          Section(header: sectionHeader("Time Windows").padding(.top, 24).padding(.bottom, 4)) {
+            VStack(alignment: .leading, spacing: 8) {
+              // Display windows sorted by weekday, then by start time while preserving element bindings.
+              // How: Sort indices instead of values, then bind with $sync.timeWindows[idx].
+              let sortedIndices = sync.timeWindows
+                .enumerated()
+                .sorted { isTimeWindow($0.element, before: $1.element) }
+                .map { $0.offset }
+              ForEach(sortedIndices, id: \.self) { idx in
+                let twBinding = $sync.timeWindows[idx]
+                let tw = sync.timeWindows[idx]
+                HStack(alignment: .top, spacing: 12) {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Day")
+                    Picker("", selection: twBinding.weekday) {
+                      ForEach(Weekday.allCases) { d in Text(d.label).tag(d) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 90)
                   }
-                  .labelsHidden()
-                  .frame(width: 90)
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Start")
+                    DatePicker(
+                      "",
+                      selection: Binding(
+                        get: { tw.start.asDate() },
+                        set: { newDate in twBinding.start.wrappedValue = TimeOfDay.from(date: newDate)
+                        }
+                      ),
+                      displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                  }
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("End")
+                    DatePicker(
+                      "",
+                      selection: Binding(
+                        get: { tw.end.asDate() },
+                        set: { newDate in twBinding.end.wrappedValue = TimeOfDay.from(date: newDate) }
+                      ),
+                      displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                  }
+                  Button(role: .destructive) {
+                    removeTimeWindow(tw.id)
+                  } label: {
+                    Image(systemName: "trash")
+                  }
+                  .padding(.top, 20)
+                  Spacer()
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("Start")
-                  DatePicker(
-                    "",
-                    selection: Binding(
-                      get: { tw.start.asDate() },
-                      set: { newDate in twBinding.start.wrappedValue = TimeOfDay.from(date: newDate)
-                      }
-                    ),
-                    displayedComponents: .hourAndMinute
-                  )
-                  .labelsHidden()
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("End")
-                  DatePicker(
-                    "",
-                    selection: Binding(
-                      get: { tw.end.asDate() },
-                      set: { newDate in twBinding.end.wrappedValue = TimeOfDay.from(date: newDate) }
-                    ),
-                    displayedComponents: .hourAndMinute
-                  )
-                  .labelsHidden()
-                }
-                Button(role: .destructive) {
-                  removeTimeWindow(tw.id)
-                } label: {
-                  Image(systemName: "trash")
-                }
-                .padding(.top, 20)
-                Spacer()
+                .padding(.vertical, 4)
+                Divider()
               }
-              .padding(.vertical, 4)
-              Divider()
-            }
-            Button {
-              addTimeWindow()
-            } label: {
-              Label("Add Time Window", systemImage: "plus")
+              Button {
+                addTimeWindow()
+              } label: {
+                Label("Add Time Window", systemImage: "plus")
+              }
             }
           }
         }
+        .frame(minWidth: 500, minHeight: 420)
+        .padding()
       }
-      .frame(minWidth: 500, minHeight: 420)
-      .padding()
 
       Divider()
 

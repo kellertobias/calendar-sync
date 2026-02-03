@@ -98,14 +98,11 @@ struct SettingsView: View {
       switch selection {
       case .sync(let id):
         if let sync = appState.syncs.first(where: { $0.id == id }) {
-          ScrollView {
             VStack(alignment: .leading, spacing: 0) {
               SyncEditorView(sync: binding(for: sync), onRequestSettings: { selection = .settings })
                 .padding()
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-          }
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
           ContentUnavailableView("Select a Sync", systemImage: "calendar")
         }
