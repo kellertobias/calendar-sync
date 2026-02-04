@@ -16,6 +16,9 @@ final class Persistence: ObservableObject {
       // Include per-action log rows so LogsView can fetch actions by run id.
       SDSyncActionLog.self,
       SDAppSettings.self,
+      // CapEx configuration and rules
+      SDCapExConfig.self,
+      SDCapExRule.self,
     ])
     let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
     do {

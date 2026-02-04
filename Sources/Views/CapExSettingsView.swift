@@ -1,9 +1,12 @@
 import SwiftUI
 import EventKit
+import SwiftData
 
 struct CapExSettingsView: View {
   @Binding var config: CapExConfigUI
   @EnvironmentObject var appState: AppState
+  @Environment(\.modelContext) private var context
+  @Query private var storedCapEx: [SDCapExConfig]
   
   @State private var showingAddRule = false
   @State private var editingRuleId: UUID?
@@ -126,6 +129,62 @@ struct CapExSettingsView: View {
             .padding()
         }
     }
+    .onChange(of: config) { _, newValue in
+        saveConfig(newValue)
+    }
+  }
+  
+  private func saveConfig(_ newValue: CapExConfigUI) {
+    if let stored = storedCapEx.first {
+        stored.workingTimeCalendarId = newValue.workingTimeCalendarId
+        stored.historyDays = newValue.historyDays
+        stored.showDaily = newValue.showDaily
+        stored.capExPercentage = newValue.capExPercentage
+        
+        let existingRules = Dictionary(uniqueKeysWithValues: stored.rules.map { ($0.id, $0) })
+        var seenIds: Set<UUID> = []
+        var newRules: [SDCapExRule] = []
+        
+        for ruleUI in newValue.rules {
+            seenIds.insert(ruleUI.id)
+            if let existing = existingRules[ruleUI.id] {
+                existing.calendarId = ruleUI.calendarId
+                existing.titleFilter = ruleUI.titleFilter
+                existing.participantsFilter = ruleUI.participantsFilter
+                existing.matchMode = ruleUI.matchMode
+                newRules.append(existing)
+            } else {
+                let newRule = SDCapExRule(
+                    id: ruleUI.id,
+                    calendarId: ruleUI.calendarId,
+                    titleFilter: ruleUI.titleFilter,
+                    participantsFilter: ruleUI.participantsFilter,
+                    matchMode: ruleUI.matchMode
+                )
+                newRules.append(newRule)
+            }
+        }
+        
+        stored.rules = newRules
+        for rule in stored.rules where !seenIds.contains(rule.id) {
+           context.delete(rule)
+        }
+    } else {
+        // Create new config
+        let rules = newValue.rules.map {
+            SDCapExRule(id: $0.id, calendarId: $0.calendarId, titleFilter: $0.titleFilter, participantsFilter: $0.participantsFilter, matchMode: $0.matchMode)
+        }
+        let newConfig = SDCapExConfig(
+            id: newValue.id,
+            workingTimeCalendarId: newValue.workingTimeCalendarId,
+            historyDays: newValue.historyDays,
+            showDaily: newValue.showDaily,
+            capExPercentage: newValue.capExPercentage,
+            rules: rules
+        )
+        context.insert(newConfig)
+    }
+    try? context.save()
   }
   
   private func startEditing(rule: CapExRuleUI) {

@@ -149,12 +149,15 @@ struct SettingsView: View {
       }
       
       // Load CapEx Config
+      print("[CapEx Load] onAppear storedCapEx.count=\(storedCapEx.count)")
       if let stored = storedCapEx.first {
+        print("[CapEx Load] Loading stored config id=\(stored.id), calendar=\(stored.workingTimeCalendarId), pct=\(stored.capExPercentage)")
         appState.capExConfig = CapExConfigUI(
             id: stored.id,
             workingTimeCalendarId: stored.workingTimeCalendarId,
             historyDays: stored.historyDays,
             showDaily: stored.showDaily,
+            capExPercentage: stored.capExPercentage,
             rules: stored.rules.map {
                 CapExRuleUI(id: $0.id, calendarId: $0.calendarId, titleFilter: $0.titleFilter, participantsFilter: $0.participantsFilter, matchMode: $0.matchMode)
             }
@@ -165,9 +168,10 @@ struct SettingsView: View {
     }
     // Persist changes to syncs even when editing from Settings view.
     .onChange(of: appState.capExConfig) { _, newValue in
+        print("[CapEx Persistence] onChange triggered. storedCapEx.count=\(storedCapEx.count)")
         if let stored = storedCapEx.first {
+            print("[CapEx Persistence] Updating existing config id=\(stored.id)")
             stored.workingTimeCalendarId = newValue.workingTimeCalendarId
-            stored.historyDays = newValue.historyDays
             stored.historyDays = newValue.historyDays
             stored.showDaily = newValue.showDaily
             stored.capExPercentage = newValue.capExPercentage
@@ -214,6 +218,7 @@ struct SettingsView: View {
             
         } else {
             // Create new
+            print("[CapEx Persistence] Creating new config with id=\(newValue.id)")
             let rules = newValue.rules.map {
                 SDCapExRule(id: $0.id, calendarId: $0.calendarId, titleFilter: $0.titleFilter, participantsFilter: $0.participantsFilter, matchMode: $0.matchMode)
             }
