@@ -21,6 +21,13 @@ final class AppState: ObservableObject {
   @Published var diagnosticsEnabled: Bool = true
   @Published var tasksURL: String = ""
 
+  @Published var capExConfig: CapExConfigUI = CapExConfigUI(
+    workingTimeCalendarId: "",
+    historyDays: 30,
+    showDaily: true,
+    rules: []
+  )
+
   /// Available calendars; sourced from EventKit once authorized.
   @Published var availableCalendars: [CalendarOption] = []
 

@@ -214,3 +214,22 @@ struct TimeWindowUI: Identifiable, Codable, Hashable {
   var start: TimeOfDay
   var end: TimeOfDay
 }
+
+/// Configuration for the CapEx (Activatable Hours) feature.
+struct CapExConfigUI: Identifiable, Codable, Hashable {
+  var id: UUID = UUID()
+  var workingTimeCalendarId: String
+  var historyDays: Int
+  var showDaily: Bool
+  var capExPercentage: Int = 100
+  var rules: [CapExRuleUI]
+}
+
+/// Rule for excluding time from CapEx.
+struct CapExRuleUI: Identifiable, Codable, Hashable {
+  var id: UUID = UUID()
+  var calendarId: String
+  var titleFilter: String?
+  var participantsFilter: String?
+  var matchMode: String = "contains"
+}

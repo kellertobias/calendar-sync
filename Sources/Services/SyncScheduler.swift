@@ -27,16 +27,25 @@ final class SyncScheduler: ObservableObject {
   func stop() {
     timer?.invalidate()
     timer = nil
+    nextRunAt = nil
   }
 
+  @Published var nextRunAt: Date?
+  
   /// Schedules the next run with jitter and optional delay.
   private func scheduleNext(after initialDelaySeconds: TimeInterval) {
-    guard appState.intervalSeconds > 0 else { return }
+    guard appState.intervalSeconds > 0 else {
+      nextRunAt = nil
+      return
+    }
     // Jitter: +/- 10% of the base interval
     let base = TimeInterval(appState.intervalSeconds)
     let jitterRange = base * 0.1
     let jitter = Double.random(in: -jitterRange...jitterRange)
     let delay = max(1, initialDelaySeconds + base + jitter)
+    let nextDate = Date().addingTimeInterval(delay)
+    nextRunAt = nextDate
+    
     timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
       guard let self else { return }
       Task { @MainActor in

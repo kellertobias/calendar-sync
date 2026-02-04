@@ -35,7 +35,7 @@ struct CalendarSyncApp: App {
 
   var body: some Scene {
     // Menu bar entry point with primary controls
-    MenuBarExtra("Calendar Sync", systemImage: "calendar.badge.clock") {
+    MenuBarExtra(content: {
       MenuContentView()
         .environmentObject(appState)
         .environmentObject(eventKitAuth)
@@ -43,6 +43,13 @@ struct CalendarSyncApp: App {
         .modelContainer(persistence.container)
         .environmentObject(
           coordinatorHolder.coordinator(modelContext: persistence.container.mainContext)
+        )
+        // Inject the scheduler so the menu can show "next sync" time
+        .environmentObject(
+          schedulerHolder.scheduler(
+            coordinator: coordinatorHolder.coordinator(
+              modelContext: persistence.container.mainContext), appState: appState
+          )
         )
         .task {
           // Ensure syncs and settings are loaded even if only the menu is opened.
@@ -62,7 +69,10 @@ struct CalendarSyncApp: App {
             }
           }
         }
-    }
+    }, label: {
+      // Dynamic label that shows "Syncing" state
+      MenuBarLabel(coordinator: coordinatorHolder.coordinator(modelContext: persistence.container.mainContext))
+    })
 
     // Settings window for permissions and intervals (dedicated id)
     WindowGroup("Settings", id: "settings") {
@@ -135,6 +145,19 @@ struct CalendarSyncApp: App {
       eventKitAuth.refreshStatus()
       calendars.reload(authorized: eventKitAuth.hasReadAccess)
       appState.availableCalendars = calendars.calendars
+    }
+
+    // CapEx Report Window
+    WindowGroup("Activatable Hours", id: "capex") {
+        CapExReportView()
+            .environmentObject(appState)
+            .environmentObject(calendars)
+            .task {
+                calendars.reload(authorized: eventKitAuth.hasReadAccess)
+                appState.availableCalendars = calendars.calendars
+                await loadSyncsFromPersistenceIfNeeded()
+                await loadAppSettingsFromPersistenceIfNeeded()
+            }
     }
 
     // Logs window
@@ -214,6 +237,23 @@ struct CalendarSyncApp: App {
       try? context.save()
     } catch {
       // Best-effort; ignore failures to avoid disrupting user experience.
+    }
+  }
+}
+
+/// A reactive label for the menu bar that updates when syncing state changes.
+struct MenuBarLabel: View {
+  @ObservedObject var coordinator: SyncCoordinator
+  
+  var body: some View {
+    if coordinator.isSyncing {
+      HStack {
+        Image(systemName: "arrow.triangle.2.circlepath")
+          .symbolEffect(.variableColor.iterative.reversing)
+        Text("Syncing")
+      }
+    } else {
+      Image(systemName: "calendar.badge.clock")
     }
   }
 }

@@ -223,3 +223,51 @@ import SwiftData
     self.tasksURL = tasksURL
   }
 }
+
+@Model final class SDCapExConfig {
+  @Attribute(.unique) var id: UUID
+  var workingTimeCalendarId: String
+  var historyDays: Int
+  var showDaily: Bool
+  var capExPercentage: Int
+  @Relationship(deleteRule: .cascade) var rules: [SDCapExRule]
+
+  init(
+    id: UUID = UUID(),
+    workingTimeCalendarId: String,
+    historyDays: Int,
+    showDaily: Bool,
+    capExPercentage: Int = 100,
+    rules: [SDCapExRule]
+  ) {
+    self.id = id
+    self.workingTimeCalendarId = workingTimeCalendarId
+    self.historyDays = historyDays
+    self.showDaily = showDaily
+    self.capExPercentage = capExPercentage
+    self.rules = rules
+  }
+}
+
+@Model final class SDCapExRule {
+  var id: UUID
+  var calendarId: String
+  var titleFilter: String?
+  var participantsFilter: String?
+  /// "contains", "exact", etc.
+  var matchMode: String
+
+  init(
+    id: UUID = UUID(),
+    calendarId: String,
+    titleFilter: String? = nil,
+    participantsFilter: String? = nil,
+    matchMode: String = "contains"
+  ) {
+    self.id = id
+    self.calendarId = calendarId
+    self.titleFilter = titleFilter
+    self.participantsFilter = participantsFilter
+    self.matchMode = matchMode
+  }
+}

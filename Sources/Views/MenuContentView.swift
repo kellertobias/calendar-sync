@@ -6,7 +6,11 @@ import SwiftUI
 struct MenuContentView: View {
   @EnvironmentObject var appState: AppState
   @EnvironmentObject var coordinator: SyncCoordinator
+  @EnvironmentObject var scheduler: SyncScheduler
   @Environment(\.openWindow) private var openWindow
+  
+  // Force a redraw when menu opens to update relative timestamps
+  @State private var now = Date()
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -16,7 +20,14 @@ struct MenuContentView: View {
           if coordinator.isSyncing {
             ProgressView().scaleEffect(0.7)
           }
-          Text(lastSyncText())
+          VStack(alignment: .leading, spacing: 2) {
+             Text(lastSyncText())
+             if let next = scheduler.nextRunAt {
+               Text("Next Sync: \(next, style: .relative)")
+                 .font(.caption)
+                 .foregroundStyle(.secondary)
+             }
+          }
           Spacer()
         }
       }
@@ -47,12 +58,17 @@ struct MenuContentView: View {
 
       Divider()
 
+      Button("Time/ CapEx…", action: openCapEx)
       Button("Settings…", action: openSettings)
       Divider()
       Button("Quit Calendar Sync", action: quitApp)
     }
     .padding(8)
     .frame(minWidth: 260)
+    .onAppear {
+        // Refresh relative times when menu opens
+        now = Date()
+    }
   }
   private func quitApp() {
     NSApplication.shared.terminate(nil)
@@ -85,10 +101,21 @@ struct MenuContentView: View {
   /// Why: Some macOS versions or contexts (e.g., `MenuBarExtra`) may not
   /// reliably open the Settings scene by id. We first attempt the official
   /// SwiftUI API, then fall back to the AppKit selector.
-  private func openSettings() { openWindow(id: "settings") }
+  private func openSettings() {
+    // Bring to front first so the window isn't buried
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    openWindow(id: "settings")
+  }
+  
+  private func openCapEx() {
+      NSApplication.shared.activate(ignoringOtherApps: true)
+      openWindow(id: "capex")
+  }
 
   private func openSyncEditor(_ id: UUID) {
     appState.selectedSyncId = id
+    // Bring to front first
+    NSApplication.shared.activate(ignoringOtherApps: true)
     openWindow(id: "syncs")
   }
 

@@ -327,6 +327,20 @@ final class SyncEngine {
     // Track duplicates from source enumeration within a single build pass.
     var seenSourceKeys: Set<String> = []
 
+    // Index targets by (title, startDate) for loose matching
+    // Only include targets that have the sync tag ("Tobisk Calendar Sync")
+    // Values are arrays because there could theoretically be duplicates
+    var looseTargetIndex: [String: [EKEvent]] = [:]
+    for te in targetEvents {
+      // Check for sync tag
+      guard (te.notes?.contains("Tobisk Calendar Sync") == true) else { continue }
+      
+      let title = te.title ?? ""
+      let start = te.startDate.map { isoFormatter.string(from: $0) } ?? "-"
+      let key = "\(title)|\(start)"
+      looseTargetIndex[key, default: []].append(te)
+    }
+
     for se in sourceEvents {
       let (sid0, occ0, rawKey) = makeOccurrenceComponents(se)
       allLegacyKeys.insert(rawKey)
@@ -344,8 +358,23 @@ final class SyncEngine {
       liveLegacyKeys.insert(legacyKey)
       let syncKey = computeSyncKey(syncName: config.name, title: se.title, occISO: occISO)
       liveSyncKeys.insert(syncKey)
-      let teFromKey = keyTargets[syncKey]
-      if let te = teFromKey {
+      
+      // Try to find target by key first
+      var te = keyTargets[syncKey]
+      
+      // Fallback: Loose matching (title + time + sync tag)
+      // If we don't have a direct key match, look for a "orphaned" matching event
+      if te == nil {
+        let title = se.title ?? ""
+        let start = se.startDate.map { isoFormatter.string(from: $0) } ?? "-"
+        let key = "\(title)|\(start)"
+        if let candidates = looseTargetIndex[key], let firstMatch = candidates.first {
+           te = firstMatch
+           print("[Plan] Loose match found for title=\(title) start=\(start). Treating as update candidate.")
+        }
+      }
+      
+      if let te = te {
         // Compare fields to see if update needed
         if needsUpdate(
           source: se, target: te, mode: config.mode, template: config.blockerTitleTemplate)
@@ -383,6 +412,13 @@ final class SyncEngine {
         deleted += 1
         print("[Plan] DELETE (key) key=\(k) title=\(te.title ?? "-")")
       }
+    }
+
+    // Sort actions: Deletions first
+    actions.sort { a1, a2 in
+      if a1.kind == .delete && a2.kind != .delete { return true }
+      if a1.kind != .delete && a2.kind == .delete { return false }
+      return false // Keep original order for same types
     }
 
     print("[Plan] Summary created=\(created) updated=\(updated) deleted=\(deleted)")

@@ -1,6 +1,7 @@
 import AppKit
 import EventKit
 import Foundation
+import OSLog
 
 /// Observable authorization helper for EventKit calendar and reminder access.
 /// Why: Centralizes permission status, requests, and deep links to System Settings for the UI.
@@ -15,7 +16,7 @@ import Foundation
 final class EventKitAuth: ObservableObject {
   @Published private(set) var status: EKAuthorizationStatus = .notDetermined
   @Published private(set) var reminderStatus: EKAuthorizationStatus = .notDetermined
-  private let store = EKEventStore()
+  private var store = EKEventStore()
   /// Prevents multiple auto-relaunch attempts in a single process lifetime.
   private var didAutoRelaunch: Bool = false
 
@@ -36,10 +37,19 @@ final class EventKitAuth: ObservableObject {
   /// Requests full read/write access to calendars (macOS 14+).
   /// - Parameter completion: Invoked on main queue after system prompt resolves.
   func requestFullAccess(completion: (() -> Void)? = nil) {
+    let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "CalendarSync", category: "Auth")
+    logger.info("requestFullAccess called. Current status: \(self.status.rawValue)")
+    
+    // Reset the store to ensure we aren't using a cached permission state.
+    // This is expensive but necessary if the app state is stale regarding TCC.
+    store = EKEventStore()
+    
     let hadReadAccessBefore = hasReadAccess
     // Prefer modern API on macOS 14+, but fall back to legacy API if needed.
     if #available(macOS 14.0, *) {
+      logger.info("Using macOS 14+ requestFullAccessToEvents")
       store.requestFullAccessToEvents { [weak self] granted, error in
+        logger.info("requestFullAccessToEvents completed. Granted: \(granted), Error: \(String(describing: error))")
         DispatchQueue.main.async {
           guard let self else { return }
           if let error {
@@ -65,7 +75,9 @@ final class EventKitAuth: ObservableObject {
         }
       }
     } else {
+      logger.info("Using legacy requestAccess(to: .event)")
       store.requestAccess(to: .event) { [weak self] granted, error in
+        logger.info("requestAccess completed. Granted: \(granted), Error: \(String(describing: error))")
         DispatchQueue.main.async {
           if let error {
             NSLog("EventKitAuth.requestAccess (legacy) error: \(error.localizedDescription)")

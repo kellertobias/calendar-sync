@@ -5,7 +5,8 @@ import SwiftUI
 // MARK: - Small helpers
 extension Color {
   /// Initialize from hex string like "#RRGGBB".
-  fileprivate init?(hex: String) {
+  init?(hex: String?) {
+    guard let hex = hex else { return nil }
     var s = hex
     if s.hasPrefix("#") { s.removeFirst() }
     guard s.count == 6, let v = Int(s, radix: 16) else { return nil }
@@ -15,6 +16,7 @@ extension Color {
     self = Color(red: r, green: g, blue: b)
   }
 }
+
 
 /// List and basic editor scaffold for sync tuples.
 struct SyncListView: View {
@@ -1108,11 +1110,12 @@ extension SyncEditorView {
 /// A macOS-friendly calendar selector using `Menu` that reliably displays icons and colors in the menu items.
 /// - Why: SwiftUI `Picker` in menu style can omit custom content/icon rendering in some contexts.
 /// - How: Uses grouped `Menu` content with `Label` rows tinted via `symbolRenderingMode(.monochrome)` + `foregroundColor`.
-private struct CalendarMenuPicker: View {
+
+struct CalendarMenuPicker: View {
   var title: String
   var calendars: [CalendarOption]
   @Binding var selection: String
-  var writableOnly: Bool
+  var writableOnly: Bool = false
 
   var body: some View {
     // Render label above to avoid Form's label-column indentation and keep
@@ -1135,7 +1138,7 @@ private struct CalendarMenuPicker: View {
             Button {
               selection = option.id
             } label: {
-              if let hex = option.colorHex, let color = Color(hex: hex) {
+              if let color = Color(hex: option.colorHex) {
                 Text("●").foregroundColor(color) + Text(" \(option.name)")
               } else {
                 Text("●").foregroundColor(.secondary) + Text(" \(option.name)")
@@ -1148,7 +1151,7 @@ private struct CalendarMenuPicker: View {
         // Current selection summary
         let current = calendars.first(where: { $0.id == selection })
         let name = current?.name ?? "Select…"
-        if let current, let hex = current.colorHex, let color = Color(hex: hex) {
+        if let current, let color = Color(hex: current.colorHex) {
           Text("●").foregroundColor(color) + Text(" \(name)")
         } else {
           Text("●").foregroundColor(.secondary) + Text(" \(name)")

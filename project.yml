@@ -38,3 +38,7 @@ targets:
       - path: Tests
     dependencies:
       - target: CalendarSync
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+

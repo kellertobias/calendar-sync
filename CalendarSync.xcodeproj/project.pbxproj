@@ -12,21 +12,28 @@
 		1ABEF06702808505AC8EB7D8 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E26DC959A8B45F782AE489C2 /* AppState.swift */; };
 		1F81B6C8506569CCEE0DFF81 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841A7AF86D8E32E2B5AF333D /* SyncCoordinator.swift */; };
 		256988107211FB89542B1918 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */; };
-		2A1B2C3D4E5F6789ABCDEF01 /* TaskSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A2B3C4D5E6F7890ABCDEF12 /* TaskSyncService.swift */; };
 		27C77B18EBC2942EA5C5F0A0 /* LogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F1C236DCC7181D97EB3F220 /* LogsView.swift */; };
+		2C4AEC0862AC2794EFA39241 /* CapExEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA8AB4A02BEAD86392781711 /* CapExEngineTests.swift */; };
 		3F9C27153EEC3924396429D1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E88BBF9C250DE065C5B5DE3 /* SettingsView.swift */; };
+		448D42402E4C27705C2C38F2 /* OccurenceKeyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0234983A0DC841C7355990 /* OccurenceKeyTests.swift */; };
 		4F57AB9C90816AD0C9DEDD9A /* MenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D302C887AAC4A77B34A2F31A /* MenuContentView.swift */; };
+		567B13F956D8503F1D6CD760 /* PlanDiffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D5DDB15428ADFE87B9DE06 /* PlanDiffTests.swift */; };
 		6C3EC51619765743760C1E83 /* CoordinatorHolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0168FD59972C368BEF5E55EC /* CoordinatorHolder.swift */; };
+		71137DAC8FB67F38C14F4584 /* DeletionSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED23A8822B8C665823792346 /* DeletionSafetyTests.swift */; };
+		74EF30BA535B5B239C3F6474 /* CapExEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D0FBBCE3A443DFBDB80EA9 /* CapExEngine.swift */; };
 		774714303F134EC1B27F7433 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC27211FE01755B3E1B5D6BB /* Models.swift */; };
 		77E839D1C6864517BF901C0C /* EventKitAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4936D7A387407A93FC45AFC7 /* EventKitAuth.swift */; };
 		815451C233454ECEC8214ABC /* SyncListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4F8EEC0986DEBF30AE7404 /* SyncListView.swift */; };
 		89A34A7E817092ADFDB7C035 /* CalendarSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B6B27D6E375B51283A8E59 /* CalendarSyncApp.swift */; };
 		8CEAB887682F9F9DB44B7B43 /* SchedulerHolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 040498EE3B975E6AFB86C8AF /* SchedulerHolder.swift */; };
 		9134C173BA3E7B9AC459C987 /* Mappers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62F9497EC8448F3C4A1F520 /* Mappers.swift */; };
+		97410C9CAD57EDF221D243B0 /* CapExSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D6FDEDA0ED309F8F3ADCE73 /* CapExSettingsView.swift */; };
 		A903E90415369665452F5C7D /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F917BCA2C39E0C141789CBBB /* Persistence.swift */; };
+		B286020B29AAC0A538292278 /* TaskSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49299AC6D7A42E9FE53CA058 /* TaskSyncService.swift */; };
 		B2E4481E74067601429CBAFF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CAC8F5E01544027C71FDAD9 /* Assets.xcassets */; };
 		BC74F0DA4BFC572F315817E0 /* EventKitCalendars.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFF5750D34DD3C796137508 /* EventKitCalendars.swift */; };
 		C5539D4C8F0536D55D64AB91 /* SyncRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 597B1861EE9756AA0B5859FB /* SyncRules.swift */; };
+		D2AEBF6C96381ABF210B5FF1 /* CapExReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924FD370DC23E9D00B0DFD94 /* CapExReportView.swift */; };
 		DB9AA28161A1B03F3CF8536A /* SyncRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD618236514CE9C3098CC83 /* SyncRulesTests.swift */; };
 		F0817FD23D67EA47E796E100 /* SyncScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD54C2FDF715AE74B159000 /* SyncScheduler.swift */; };
 /* End PBXBuildFile section */
@@ -50,28 +57,39 @@
 		2CAC8F5E01544027C71FDAD9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2DD618236514CE9C3098CC83 /* SyncRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncRulesTests.swift; sourceTree = "<group>"; };
 		47B6B27D6E375B51283A8E59 /* CalendarSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncApp.swift; sourceTree = "<group>"; };
+		49299AC6D7A42E9FE53CA058 /* TaskSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSyncService.swift; sourceTree = "<group>"; };
 		4936D7A387407A93FC45AFC7 /* EventKitAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitAuth.swift; sourceTree = "<group>"; };
+		4D6FDEDA0ED309F8F3ADCE73 /* CapExSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExSettingsView.swift; sourceTree = "<group>"; };
 		597B1861EE9756AA0B5859FB /* SyncRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncRules.swift; sourceTree = "<group>"; };
 		6E4F8EEC0986DEBF30AE7404 /* SyncListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncListView.swift; sourceTree = "<group>"; };
 		841A7AF86D8E32E2B5AF333D /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
+		924FD370DC23E9D00B0DFD94 /* CapExReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExReportView.swift; sourceTree = "<group>"; };
+		99D5DDB15428ADFE87B9DE06 /* PlanDiffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanDiffTests.swift; sourceTree = "<group>"; };
 		A2C48E6D22ADF6EDF52D7865 /* PersistenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceModels.swift; sourceTree = "<group>"; };
 		A62F9497EC8448F3C4A1F520 /* Mappers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mappers.swift; sourceTree = "<group>"; };
 		BC27211FE01755B3E1B5D6BB /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		BCFF5750D34DD3C796137508 /* EventKitCalendars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitCalendars.swift; sourceTree = "<group>"; };
 		C6E6AFEF696A8E60125AA8FA /* RunAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunAtLogin.swift; sourceTree = "<group>"; };
 		C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
-		1A2B3C4D5E6F7890ABCDEF12 /* TaskSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSyncService.swift; sourceTree = "<group>"; };
+		CA8AB4A02BEAD86392781711 /* CapExEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExEngineTests.swift; sourceTree = "<group>"; };
 		D302C887AAC4A77B34A2F31A /* MenuContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuContentView.swift; sourceTree = "<group>"; };
 		D418012FBDE6D6537B48B07C /* CalendarSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CalendarSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D8D0FBBCE3A443DFBDB80EA9 /* CapExEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExEngine.swift; sourceTree = "<group>"; };
 		DCD54C2FDF715AE74B159000 /* SyncScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncScheduler.swift; sourceTree = "<group>"; };
 		E26DC959A8B45F782AE489C2 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		ED23A8822B8C665823792346 /* DeletionSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletionSafetyTests.swift; sourceTree = "<group>"; };
 		F917BCA2C39E0C141789CBBB /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
+		FD0234983A0DC841C7355990 /* OccurenceKeyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OccurenceKeyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		366E17159F1AB7E2E8DD1773 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				CA8AB4A02BEAD86392781711 /* CapExEngineTests.swift */,
+				ED23A8822B8C665823792346 /* DeletionSafetyTests.swift */,
+				FD0234983A0DC841C7355990 /* OccurenceKeyTests.swift */,
+				99D5DDB15428ADFE87B9DE06 /* PlanDiffTests.swift */,
 				2DD618236514CE9C3098CC83 /* SyncRulesTests.swift */,
 			);
 			path = Tests;
@@ -80,6 +98,7 @@
 		3B23ED55BF3CE794E92E718F /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				D8D0FBBCE3A443DFBDB80EA9 /* CapExEngine.swift */,
 				0168FD59972C368BEF5E55EC /* CoordinatorHolder.swift */,
 				4936D7A387407A93FC45AFC7 /* EventKitAuth.swift */,
 				BCFF5750D34DD3C796137508 /* EventKitCalendars.swift */,
@@ -87,9 +106,9 @@
 				040498EE3B975E6AFB86C8AF /* SchedulerHolder.swift */,
 				841A7AF86D8E32E2B5AF333D /* SyncCoordinator.swift */,
 				C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */,
-				1A2B3C4D5E6F7890ABCDEF12 /* TaskSyncService.swift */,
 				597B1861EE9756AA0B5859FB /* SyncRules.swift */,
 				DCD54C2FDF715AE74B159000 /* SyncScheduler.swift */,
+				49299AC6D7A42E9FE53CA058 /* TaskSyncService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -116,6 +135,8 @@
 		98062532E389D81453D0FF32 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				924FD370DC23E9D00B0DFD94 /* CapExReportView.swift */,
+				4D6FDEDA0ED309F8F3ADCE73 /* CapExSettingsView.swift */,
 				0F1C236DCC7181D97EB3F220 /* LogsView.swift */,
 				D302C887AAC4A77B34A2F31A /* MenuContentView.swift */,
 				0E88BBF9C250DE065C5B5DE3 /* SettingsView.swift */,
@@ -239,6 +260,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2C4AEC0862AC2794EFA39241 /* CapExEngineTests.swift in Sources */,
+				71137DAC8FB67F38C14F4584 /* DeletionSafetyTests.swift in Sources */,
+				448D42402E4C27705C2C38F2 /* OccurenceKeyTests.swift in Sources */,
+				567B13F956D8503F1D6CD760 /* PlanDiffTests.swift in Sources */,
 				DB9AA28161A1B03F3CF8536A /* SyncRulesTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -249,6 +274,9 @@
 			files = (
 				1ABEF06702808505AC8EB7D8 /* AppState.swift in Sources */,
 				89A34A7E817092ADFDB7C035 /* CalendarSyncApp.swift in Sources */,
+				74EF30BA535B5B239C3F6474 /* CapExEngine.swift in Sources */,
+				D2AEBF6C96381ABF210B5FF1 /* CapExReportView.swift in Sources */,
+				97410C9CAD57EDF221D243B0 /* CapExSettingsView.swift in Sources */,
 				6C3EC51619765743760C1E83 /* CoordinatorHolder.swift in Sources */,
 				77E839D1C6864517BF901C0C /* EventKitAuth.swift in Sources */,
 				BC74F0DA4BFC572F315817E0 /* EventKitCalendars.swift in Sources */,
@@ -263,10 +291,10 @@
 				3F9C27153EEC3924396429D1 /* SettingsView.swift in Sources */,
 				1F81B6C8506569CCEE0DFF81 /* SyncCoordinator.swift in Sources */,
 				256988107211FB89542B1918 /* SyncEngine.swift in Sources */,
-				2A1B2C3D4E5F6789ABCDEF01 /* TaskSyncService.swift in Sources */,
 				815451C233454ECEC8214ABC /* SyncListView.swift in Sources */,
 				C5539D4C8F0536D55D64AB91 /* SyncRules.swift in Sources */,
 				F0817FD23D67EA47E796E100 /* SyncScheduler.swift in Sources */,
+				B286020B29AAC0A538292278 /* TaskSyncService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -423,6 +451,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -457,6 +486,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

@@ -1,0 +1,293 @@
+{
+  "generatedAt" : "2026-02-04T01:40:31Z",
+  "syncs" : [
+    {
+      "blockerTitleTemplate" : "Busy",
+      "createdAt" : "2025-09-05T23:44:32Z",
+      "enabled" : true,
+      "filters" : [
+        {
+          "caseSensitive" : false,
+          "id" : "6857F765-DD19-4DED-A3DF-27C885F7A1D8",
+          "pattern" : "Travel Time",
+          "type" : "excludeTitle"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "9301C61F-8AAD-4669-AFFC-BB4CE7834C92",
+          "pattern" : "Personal Appointment",
+          "type" : "excludeTitle"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "CBA4B9B4-F9A5-49B0-B522-90ECF7305385",
+          "pattern" : "",
+          "type" : "excludeAllDayWhenFree"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "A44766CE-A7D3-45E7-8118-C17B1C0126D0",
+          "pattern" : "Freelance Appointment",
+          "type" : "excludeTitle"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "E002C74C-EB3D-4063-ACA9-5D51118F327B",
+          "pattern" : "Kronos Coffee",
+          "type" : "excludeTitle"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "155C69D4-2CFA-460A-8037-D787A8A26FC9",
+          "pattern" : "Engineering Q&A",
+          "type" : "excludeTitle"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "74A43D1C-C06B-4E3C-BFA6-B59AC7A6095D",
+          "pattern" : "Freier Tag",
+          "type" : "excludeTitle"
+        },
+        {
+          "caseSensitive" : false,
+          "id" : "E5D0F620-7095-4266-91C2-D93142FB4821",
+          "pattern" : "Nachrichten abarbeiten",
+          "type" : "excludeTitle"
+        }
+      ],
+      "horizonDaysOverride" : 32,
+      "id" : "5156EDB9-D2FF-42B0-A19C-C64A13A3E44A",
+      "mode" : "privateEvents",
+      "name" : "Work -> Dashboard",
+      "sourceCalendarId" : "BE4527C7-ECE4-45C7-98DC-6241F538590C",
+      "targetCalendarId" : "F18BD258-5C95-4EE8-BBFA-569C1753370C",
+      "timeWindows" : [
+
+      ],
+      "updatedAt" : "2026-02-03T20:24:54Z"
+    },
+    {
+      "blockerTitleTemplate" : "Freelance Appointment",
+      "createdAt" : "2025-09-06T14:49:26Z",
+      "enabled" : true,
+      "filters" : [
+        {
+          "caseSensitive" : false,
+          "id" : "57EEDF4E-5301-441C-8EA0-59891656DADF",
+          "pattern" : "",
+          "type" : "excludeAllDayWhenFree"
+        }
+      ],
+      "horizonDaysOverride" : 90,
+      "id" : "C2FFED19-99A4-48D3-8050-7791D129C563",
+      "mode" : "blocker",
+      "name" : "Jobs -> Work",
+      "sourceCalendarId" : "FB07D760-2EBE-436F-97E5-C946E7DB9F73",
+      "targetCalendarId" : "BE4527C7-ECE4-45C7-98DC-6241F538590C",
+      "timeWindows" : [
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "D2F12015-29C2-4627-A651-CB4133A63710",
+          "startHour" : 5,
+          "startMinute" : 0,
+          "weekday" : "tuesday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "3E5EAA43-D293-4E92-B087-FB0C38901D4B",
+          "startHour" : 5,
+          "startMinute" : 0,
+          "weekday" : "monday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "98963821-398A-482A-A297-525D45BF41E8",
+          "startHour" : 5,
+          "startMinute" : 0,
+          "weekday" : "thursday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "6AE30C79-E8B1-423D-A805-AF21719F5127",
+          "startHour" : 5,
+          "startMinute" : 0,
+          "weekday" : "wednesday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "F8D4278C-CC43-48DD-82B5-64C298351DCF",
+          "startHour" : 5,
+          "startMinute" : 0,
+          "weekday" : "friday"
+        }
+      ],
+      "updatedAt" : "2026-02-03T20:24:54Z"
+    },
+    {
+      "blockerTitleTemplate" : "Travel Time",
+      "createdAt" : "2025-09-06T14:51:50Z",
+      "enabled" : true,
+      "filters" : [
+
+      ],
+      "horizonDaysOverride" : 21,
+      "id" : "BD73EF4D-E72B-4CC1-B5F2-3E79EEEA93FC",
+      "mode" : "blocker",
+      "name" : "Travels -> Work",
+      "sourceCalendarId" : "92984E0D-4428-4E0F-A031-912578684491",
+      "targetCalendarId" : "BE4527C7-ECE4-45C7-98DC-6241F538590C",
+      "timeWindows" : [
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "ABEF96EC-F698-4E85-816E-4E2820C4AA04",
+          "startHour" : 7,
+          "startMinute" : 0,
+          "weekday" : "tuesday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "E00E8A92-C8E5-4E37-9AFC-273A550CFAF8",
+          "startHour" : 7,
+          "startMinute" : 0,
+          "weekday" : "friday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "8D4C3F27-4E80-4859-90BC-6B9F431D0770",
+          "startHour" : 7,
+          "startMinute" : 0,
+          "weekday" : "thursday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "D0AA30F6-40AB-41EB-A455-38881B75F788",
+          "startHour" : 7,
+          "startMinute" : 0,
+          "weekday" : "wednesday"
+        },
+        {
+          "endHour" : 23,
+          "endMinute" : 0,
+          "id" : "64D17A4C-1288-4835-9D48-6050E9AC5BBF",
+          "startHour" : 7,
+          "startMinute" : 0,
+          "weekday" : "monday"
+        }
+      ],
+      "updatedAt" : "2026-02-03T20:24:54Z"
+    },
+    {
+      "blockerTitleTemplate" : "Personal Appointment (Fixed)",
+      "createdAt" : "2025-09-06T14:55:36Z",
+      "enabled" : true,
+      "filters" : [
+
+      ],
+      "horizonDaysOverride" : 93,
+      "id" : "BF497300-4252-4C07-B75E-09250E9F9D9C",
+      "mode" : "blocker",
+      "name" : "Important -> Work",
+      "sourceCalendarId" : "CC5FF536-C8A5-4BE0-B0F1-9BFEED72B0D7",
+      "targetCalendarId" : "BE4527C7-ECE4-45C7-98DC-6241F538590C",
+      "timeWindows" : [
+
+      ],
+      "updatedAt" : "2026-02-03T20:24:54Z"
+    },
+    {
+      "blockerTitleTemplate" : "Personal Appointment",
+      "createdAt" : "2025-09-04T23:32:04Z",
+      "enabled" : true,
+      "filters" : [
+        {
+          "caseSensitive" : false,
+          "id" : "65C47A2A-6F15-42E7-A6D9-912F0972CE76",
+          "pattern" : "",
+          "type" : "excludeAllDayWhenFree"
+        }
+      ],
+      "horizonDaysOverride" : 62,
+      "id" : "845BF7DC-3234-46E7-BD89-FB26E6C41EE6",
+      "mode" : "blocker",
+      "name" : "Private -> Work",
+      "sourceCalendarId" : "4557DDC0-6DDF-4AC1-A34D-EEACD646E600",
+      "targetCalendarId" : "BE4527C7-ECE4-45C7-98DC-6241F538590C",
+      "timeWindows" : [
+        {
+          "endHour" : 22,
+          "endMinute" : 0,
+          "id" : "AB2C0263-AF3F-4CDA-9069-C4C0AFCB6ABA",
+          "startHour" : 8,
+          "startMinute" : 0,
+          "weekday" : "friday"
+        },
+        {
+          "endHour" : 22,
+          "endMinute" : 0,
+          "id" : "94655E49-8C45-4468-922B-2B4A571A21C7",
+          "startHour" : 8,
+          "startMinute" : 0,
+          "weekday" : "monday"
+        },
+        {
+          "endHour" : 22,
+          "endMinute" : 0,
+          "id" : "B60A2FE6-51DF-4438-BECB-D01C6917D17C",
+          "startHour" : 8,
+          "startMinute" : 0,
+          "weekday" : "wednesday"
+        },
+        {
+          "endHour" : 22,
+          "endMinute" : 0,
+          "id" : "8018852E-CFF7-4359-8B39-083974CFEFB4",
+          "startHour" : 8,
+          "startMinute" : 0,
+          "weekday" : "thursday"
+        },
+        {
+          "endHour" : 22,
+          "endMinute" : 0,
+          "id" : "11BF1901-BBC1-4F77-A927-75A2493E80B5",
+          "startHour" : 8,
+          "startMinute" : 0,
+          "weekday" : "tuesday"
+        }
+      ],
+      "updatedAt" : "2026-02-03T20:24:54Z"
+    },
+    {
+      "blockerTitleTemplate" : "Frei",
+      "createdAt" : "2026-02-03T20:12:52Z",
+      "enabled" : true,
+      "filters" : [
+        {
+          "caseSensitive" : false,
+          "id" : "80C418E3-548B-47F9-9946-8839EC2219AB",
+          "pattern" : "Freier Tag",
+          "type" : "includeTitle"
+        }
+      ],
+      "horizonDaysOverride" : 31,
+      "id" : "8D2570ED-A8F7-4CCF-850C-719799E7D286",
+      "mode" : "blocker",
+      "name" : "Freier Tag",
+      "sourceCalendarId" : "BE4527C7-ECE4-45C7-98DC-6241F538590C",
+      "targetCalendarId" : "12D9E7E8-3E2F-431E-B79A-7F725426A622",
+      "timeWindows" : [
+
+      ],
+      "updatedAt" : "2026-02-03T20:24:54Z"
+    }
+  ],
+  "version" : 1
+}

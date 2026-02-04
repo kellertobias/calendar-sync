@@ -6,7 +6,7 @@ final class SyncRulesTests: XCTestCase {
   func testExtractMarkerFromNotes() {
     let notes = "Some text\n[CalendarSync] tuple=ABC source=SID occ=2024-06-01T10:00:00Z"
     let m = SyncRules.extractMarker(notes: notes, urlString: nil)
-    XCTAssertEqual(m, .some(.init(tuple: "ABC", source: "SID", occ: "2024-06-01T10:00:00Z")))
+    XCTAssertEqual(m, .some(.init(tuple: "ABC", name: nil, source: "SID", occ: "2024-06-01T10:00:00Z", key: nil)))
   }
 
   func testExtractMarkerFromURL() {
@@ -45,21 +45,21 @@ final class SyncRulesTests: XCTestCase {
     XCTAssertTrue(
       SyncRules.passesFilters(
         title: "Daily standup", location: nil, notes: nil, organizer: nil, filters: [include],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
     XCTAssertFalse(
       SyncRules.passesFilters(
         title: "Planning", location: nil, notes: nil, organizer: nil, filters: [include],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
 
     let exclude = FilterRuleUI(type: .excludeTitle, pattern: "Private", caseSensitive: false)
     XCTAssertFalse(
       SyncRules.passesFilters(
         title: "Private: Doctor", location: nil, notes: nil, organizer: nil, filters: [exclude],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
     XCTAssertTrue(
       SyncRules.passesFilters(
         title: "Public", location: nil, notes: nil, organizer: nil, filters: [exclude],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
   }
 
   func testFiltersRegexCaseSensitivity() {
@@ -68,17 +68,17 @@ final class SyncRulesTests: XCTestCase {
     XCTAssertTrue(
       SyncRules.passesFilters(
         title: "Review 123", location: nil, notes: nil, organizer: nil, filters: [inc],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
     XCTAssertFalse(
       SyncRules.passesFilters(
         title: "review 123", location: nil, notes: nil, organizer: nil, filters: [inc],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
 
     let exc = FilterRuleUI(type: .excludeRegex, pattern: "(?i)secret", caseSensitive: false)
     XCTAssertFalse(
       SyncRules.passesFilters(
         title: "Top Secret", location: nil, notes: nil, organizer: nil, filters: [exc],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
   }
 
   func testIgnoreSyncedEventsSkipsWhenNotesContainPhrase() {
@@ -89,7 +89,7 @@ final class SyncRulesTests: XCTestCase {
     XCTAssertFalse(
       SyncRules.passesFilters(
         title: "Anything", location: nil, notes: notes, organizer: nil, filters: [rule],
-        sourceNotes: notes, sourceURLString: nil))
+        sourceNotes: notes, sourceURLString: nil, configId: cfg))
   }
 
   func testLocationAndOrganizerFilters() {
@@ -98,13 +98,13 @@ final class SyncRulesTests: XCTestCase {
     XCTAssertTrue(
       SyncRules.passesFilters(
         title: "", location: "HQ-1", notes: nil, organizer: nil, filters: [locInc],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
 
     let orgRx = FilterRuleUI(type: .includeOrganizerRegex, pattern: "^alice@", caseSensitive: false)
     XCTAssertTrue(
       SyncRules.passesFilters(
         title: "", location: nil, notes: nil, organizer: "alice@example.com", filters: [orgRx],
-        sourceNotes: nil, sourceURLString: nil))
+        sourceNotes: nil, sourceURLString: nil, configId: cfg))
   }
 
   func testTimeWindowsBoundaries() throws {
