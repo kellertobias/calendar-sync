@@ -126,7 +126,7 @@ struct SettingsView: View {
           ContentUnavailableView("Select a Sync", systemImage: "calendar")
         }
       case .capEx:
-        CapExSettingsView(config: $appState.capExConfig)
+        CapExSettingsView(config: $appState.capExConfig, submitConfig: $appState.capExSubmitConfig)
             .padding()
       case .syncSettings:
         SyncSettingsView()
@@ -161,6 +161,16 @@ struct SettingsView: View {
             rules: stored.rules.map {
                 CapExRuleUI(id: $0.id, calendarId: $0.calendarId, titleFilter: $0.titleFilter, participantsFilter: $0.participantsFilter, matchMode: $0.matchMode)
             }
+        )
+        // Load submit config
+        appState.capExSubmitConfig = CapExSubmitConfigUI.from(
+            scriptTemplate: stored.submitScriptTemplate,
+            scheduleEnabled: stored.submitScheduleEnabled,
+            scheduleDaysRaw: stored.submitScheduleDaysRaw,
+            afterHour: stored.submitAfterHour,
+            afterMinute: stored.submitAfterMinute,
+            lastSubmittedAt: stored.lastSubmittedAt,
+            lastSubmittedWeek: stored.lastSubmittedWeek
         )
       } else {
         // No stored config, keep default but insert it later if changed

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0281BF826D48D00F188D6CD6 /* RunAtLogin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E6AFEF696A8E60125AA8FA /* RunAtLogin.swift */; };
 		1116F480B54004F16F49C426 /* PersistenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C48E6D22ADF6EDF52D7865 /* PersistenceModels.swift */; };
+		12E08DCAE05831382988100A /* CapExSubmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 139F40105ADE7AD5530EF96D /* CapExSubmissionTests.swift */; };
 		1ABEF06702808505AC8EB7D8 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = E26DC959A8B45F782AE489C2 /* AppState.swift */; };
 		1F81B6C8506569CCEE0DFF81 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841A7AF86D8E32E2B5AF333D /* SyncCoordinator.swift */; };
 		256988107211FB89542B1918 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CE77AD5CD68EFACC26F7F7 /* SyncEngine.swift */; };
@@ -16,7 +17,9 @@
 		2C4AEC0862AC2794EFA39241 /* CapExEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA8AB4A02BEAD86392781711 /* CapExEngineTests.swift */; };
 		3F9C27153EEC3924396429D1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E88BBF9C250DE065C5B5DE3 /* SettingsView.swift */; };
 		448D42402E4C27705C2C38F2 /* OccurenceKeyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0234983A0DC841C7355990 /* OccurenceKeyTests.swift */; };
+		466242C8360DDFDE01467DCA /* CapExSubmissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01D6D0CA699181A105672DC /* CapExSubmissionService.swift */; };
 		4F57AB9C90816AD0C9DEDD9A /* MenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D302C887AAC4A77B34A2F31A /* MenuContentView.swift */; };
+		50CB3E395AB922861D73DCD1 /* CapExSubmissionScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0B509C18B88A9259D8D107 /* CapExSubmissionScheduler.swift */; };
 		567B13F956D8503F1D6CD760 /* PlanDiffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D5DDB15428ADFE87B9DE06 /* PlanDiffTests.swift */; };
 		6C3EC51619765743760C1E83 /* CoordinatorHolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0168FD59972C368BEF5E55EC /* CoordinatorHolder.swift */; };
 		71137DAC8FB67F38C14F4584 /* DeletionSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED23A8822B8C665823792346 /* DeletionSafetyTests.swift */; };
@@ -54,8 +57,10 @@
 		040498EE3B975E6AFB86C8AF /* SchedulerHolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchedulerHolder.swift; sourceTree = "<group>"; };
 		0E88BBF9C250DE065C5B5DE3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		0F1C236DCC7181D97EB3F220 /* LogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsView.swift; sourceTree = "<group>"; };
+		139F40105ADE7AD5530EF96D /* CapExSubmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExSubmissionTests.swift; sourceTree = "<group>"; };
 		2CAC8F5E01544027C71FDAD9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2DD618236514CE9C3098CC83 /* SyncRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncRulesTests.swift; sourceTree = "<group>"; };
+		3A0B509C18B88A9259D8D107 /* CapExSubmissionScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExSubmissionScheduler.swift; sourceTree = "<group>"; };
 		47B6B27D6E375B51283A8E59 /* CalendarSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSyncApp.swift; sourceTree = "<group>"; };
 		49299AC6D7A42E9FE53CA058 /* TaskSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskSyncService.swift; sourceTree = "<group>"; };
 		4936D7A387407A93FC45AFC7 /* EventKitAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitAuth.swift; sourceTree = "<group>"; };
@@ -67,6 +72,7 @@
 		99D5DDB15428ADFE87B9DE06 /* PlanDiffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanDiffTests.swift; sourceTree = "<group>"; };
 		A2C48E6D22ADF6EDF52D7865 /* PersistenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceModels.swift; sourceTree = "<group>"; };
 		A62F9497EC8448F3C4A1F520 /* Mappers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mappers.swift; sourceTree = "<group>"; };
+		B01D6D0CA699181A105672DC /* CapExSubmissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapExSubmissionService.swift; sourceTree = "<group>"; };
 		BC27211FE01755B3E1B5D6BB /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		BCFF5750D34DD3C796137508 /* EventKitCalendars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitCalendars.swift; sourceTree = "<group>"; };
 		C6E6AFEF696A8E60125AA8FA /* RunAtLogin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunAtLogin.swift; sourceTree = "<group>"; };
@@ -87,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				CA8AB4A02BEAD86392781711 /* CapExEngineTests.swift */,
+				139F40105ADE7AD5530EF96D /* CapExSubmissionTests.swift */,
 				ED23A8822B8C665823792346 /* DeletionSafetyTests.swift */,
 				FD0234983A0DC841C7355990 /* OccurenceKeyTests.swift */,
 				99D5DDB15428ADFE87B9DE06 /* PlanDiffTests.swift */,
@@ -99,6 +106,8 @@
 			isa = PBXGroup;
 			children = (
 				D8D0FBBCE3A443DFBDB80EA9 /* CapExEngine.swift */,
+				3A0B509C18B88A9259D8D107 /* CapExSubmissionScheduler.swift */,
+				B01D6D0CA699181A105672DC /* CapExSubmissionService.swift */,
 				0168FD59972C368BEF5E55EC /* CoordinatorHolder.swift */,
 				4936D7A387407A93FC45AFC7 /* EventKitAuth.swift */,
 				BCFF5750D34DD3C796137508 /* EventKitCalendars.swift */,
@@ -261,6 +270,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2C4AEC0862AC2794EFA39241 /* CapExEngineTests.swift in Sources */,
+				12E08DCAE05831382988100A /* CapExSubmissionTests.swift in Sources */,
 				71137DAC8FB67F38C14F4584 /* DeletionSafetyTests.swift in Sources */,
 				448D42402E4C27705C2C38F2 /* OccurenceKeyTests.swift in Sources */,
 				567B13F956D8503F1D6CD760 /* PlanDiffTests.swift in Sources */,
@@ -277,6 +287,8 @@
 				74EF30BA535B5B239C3F6474 /* CapExEngine.swift in Sources */,
 				D2AEBF6C96381ABF210B5FF1 /* CapExReportView.swift in Sources */,
 				97410C9CAD57EDF221D243B0 /* CapExSettingsView.swift in Sources */,
+				50CB3E395AB922861D73DCD1 /* CapExSubmissionScheduler.swift in Sources */,
+				466242C8360DDFDE01467DCA /* CapExSubmissionService.swift in Sources */,
 				6C3EC51619765743760C1E83 /* CoordinatorHolder.swift in Sources */,
 				77E839D1C6864517BF901C0C /* EventKitAuth.swift in Sources */,
 				BC74F0DA4BFC572F315817E0 /* EventKitCalendars.swift in Sources */,

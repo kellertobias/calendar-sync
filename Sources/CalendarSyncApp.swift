@@ -18,6 +18,7 @@ struct CalendarSyncApp: App {
   @StateObject private var persistence = Persistence()
   @StateObject private var coordinatorHolder = CoordinatorHolder()
   @StateObject private var schedulerHolder = SchedulerHolder()
+  @StateObject private var capExScheduler = CapExSubmissionScheduler()
 
   init() {
     // Terminate earlier running versions of this app
@@ -55,8 +56,12 @@ struct CalendarSyncApp: App {
           // Ensure syncs and settings are loaded even if only the menu is opened.
           await loadSyncsFromPersistenceIfNeeded()
           await loadAppSettingsFromPersistenceIfNeeded()
+          await loadCapExConfigFromPersistenceIfNeeded()
           calendars.reload(authorized: eventKitAuth.hasReadAccess)
           appState.availableCalendars = calendars.calendars
+          
+          // Start CapEx submission scheduler
+          capExScheduler.configure(appState: appState)
 
           let hasEnabled = appState.syncs.contains { $0.enabled }
           if !hasEnabled {
@@ -237,6 +242,39 @@ struct CalendarSyncApp: App {
       try? context.save()
     } catch {
       // Best-effort; ignore failures to avoid disrupting user experience.
+    }
+  }
+  
+  /// Loads stored CapEx config into `appState` once to avoid ghost defaults.
+  @MainActor
+  private func loadCapExConfigFromPersistenceIfNeeded() async {
+    let context = persistence.container.mainContext
+    do {
+      let descriptor = FetchDescriptor<SDCapExConfig>()
+      let stored = try context.fetch(descriptor)
+      if let capex = stored.first {
+        appState.capExConfig = CapExConfigUI(
+          id: capex.id,
+          workingTimeCalendarId: capex.workingTimeCalendarId,
+          historyDays: capex.historyDays,
+          showDaily: capex.showDaily,
+          capExPercentage: capex.capExPercentage,
+          rules: capex.rules.map {
+            CapExRuleUI(id: $0.id, calendarId: $0.calendarId, titleFilter: $0.titleFilter, participantsFilter: $0.participantsFilter, matchMode: $0.matchMode)
+          }
+        )
+        appState.capExSubmitConfig = CapExSubmitConfigUI.from(
+          scriptTemplate: capex.submitScriptTemplate,
+          scheduleEnabled: capex.submitScheduleEnabled,
+          scheduleDaysRaw: capex.submitScheduleDaysRaw,
+          afterHour: capex.submitAfterHour,
+          afterMinute: capex.submitAfterMinute,
+          lastSubmittedAt: capex.lastSubmittedAt,
+          lastSubmittedWeek: capex.lastSubmittedWeek
+        )
+      }
+    } catch {
+      // Best-effort; leave defaults on failure.
     }
   }
 }

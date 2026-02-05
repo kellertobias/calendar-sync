@@ -1,10 +1,15 @@
+import SwiftData
+import EventKit
+import AppKit
 import SwiftUI
 
-import EventKit
-
 struct CapExReportView: View {
+  @Environment(\.modelContext) private var modelContext
   @EnvironmentObject var appState: AppState
+  @StateObject private var submissionService = CapExSubmissionService()
   @State private var engine = CapExEngine()
+  
+  @Query private var submissions: [SDCapExSubmission]
   
   @State private var currentDate = Date()
   @State private var result: CapExEngine.CalculationResult?
@@ -82,6 +87,11 @@ struct CapExReportView: View {
               Divider()
               summaryCard(title: "CapEx (Net)", seconds: res.netCapExSeconds, color: .green, large: true)
               
+              if viewMode != .daily {
+                  Divider()
+                  submissionStatusCard(res)
+              }
+              
               Spacer()
           }
           .padding()
@@ -132,8 +142,53 @@ struct CapExReportView: View {
       }
   }
   
+  
+  private func submissionStatusCard(_ res: CapExEngine.CalculationResult) -> some View {
+      let identifier = CapExSubmissionService.weekIdentifier(for: periodStart)
+      let isSubmitted = submissions.contains { $0.periodIdentifier == identifier }
+      
+      return VStack(alignment: .leading, spacing: 10) {
+          Text("Submission Status")
+              .font(.headline)
+          
+          if isSubmitted {
+              HStack {
+                  Image(systemName: "checkmark.circle.fill")
+                      .foregroundStyle(.green)
+                  Text("Submitted")
+                      .font(.subheadline)
+                      .foregroundStyle(.secondary)
+              }
+          } else {
+              Button(action: {
+                  Task {
+                      await submit(identifier: identifier)
+                  }
+              }) {
+                  if submissionService.isRunning {
+                      ProgressView()
+                          .controlSize(.small)
+                  } else {
+                      Text("Submit Week")
+                  }
+              }
+              .disabled(submissionService.isRunning || appState.capExSubmitConfig.scriptTemplate.isEmpty)
+              .help(appState.capExSubmitConfig.scriptTemplate.isEmpty ? "Script template not configured" : "Submit CapEx for this week")
+          }
+      }
+      .padding()
+      .background(Color(NSColor.controlBackgroundColor))
+      .overlay(
+          RoundedRectangle(cornerRadius: 8)
+              .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+      )
+  }
+  
   private func dailyRow(date: Date, stat: CapExEngine.DailyStat?) -> some View {
-      HStack {
+      let identifier = CapExSubmissionService.dayIdentifier(for: date)
+      let isSubmitted = submissions.contains { $0.periodIdentifier == identifier }
+
+      return HStack {
           VStack(alignment: .leading) {
               Text(date.formatted(date: .abbreviated, time: .omitted))
                   .font(.headline)
@@ -155,12 +210,42 @@ struct CapExReportView: View {
                  .font(.headline)
                  .foregroundStyle(.green)
                  .frame(width: 80, alignment: .trailing)
+             
+             // Daily Submission Button
+             if isSubmitted {
+                 Image(systemName: "checkmark.circle.fill")
+                     .foregroundStyle(.green)
+                     .help("Already submitted")
+             } else {
+                 Button(action: {
+                     Task { await submit(identifier: identifier) }
+                 }) {
+                    Image(systemName: "paperplane")
+                 }
+                 .buttonStyle(.borderless)
+                 .disabled(submissionService.isRunning || appState.capExSubmitConfig.scriptTemplate.isEmpty)
+                 .help("Submit this day")
+             }
+
           } else {
               Spacer()
               Text("-")
           }
       }
       .padding(.vertical, 4)
+  }
+  
+  private func submit(identifier: String) async {
+      do {
+          try await submissionService.submit(
+            template: appState.capExSubmitConfig.scriptTemplate,
+            config: appState.capExConfig,
+            periodIdentifier: identifier,
+            context: modelContext
+          )
+      } catch {
+          print("Submission failed: \(error)")
+      }
   }
   
   // Helpers

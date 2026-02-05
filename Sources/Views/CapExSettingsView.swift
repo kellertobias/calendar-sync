@@ -4,12 +4,16 @@ import SwiftData
 
 struct CapExSettingsView: View {
   @Binding var config: CapExConfigUI
+  @Binding var submitConfig: CapExSubmitConfigUI
   @EnvironmentObject var appState: AppState
   @Environment(\.modelContext) private var context
   @Query private var storedCapEx: [SDCapExConfig]
   
+  @StateObject private var submissionService = CapExSubmissionService()
   @State private var showingAddRule = false
   @State private var editingRuleId: UUID?
+  @State private var testOutput: String = ""
+  @State private var showingTestOutput = false
   
   private let fieldLabelLeading: CGFloat = 16
 
@@ -101,6 +105,141 @@ struct CapExSettingsView: View {
         }
         .padding(.top, 8)
       }
+      
+      // Script Submission Section
+      Section(header: sectionHeader("Submit Script").padding(.top, 24).padding(.bottom, 4)) {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Script Template")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, fieldLabelLeading / 2)
+          
+          TextEditor(text: $submitConfig.scriptTemplate)
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: 80)
+            .padding(4)
+            .background(Color(NSColor.textBackgroundColor))
+            .cornerRadius(6)
+            .overlay(
+              RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+            .padding(.leading, fieldLabelLeading)
+          
+          Text("Use {{week_capex[0]}} for current week, {{week_capex[-1]}} for last week, etc.")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.leading, fieldLabelLeading)
+          
+          Divider().padding(.vertical, 8)
+          
+          // Schedule Toggle
+          Toggle("Enable Scheduled Submission", isOn: $submitConfig.scheduleEnabled)
+            .padding(.leading, fieldLabelLeading)
+          
+          if submitConfig.scheduleEnabled {
+            // Schedule Days
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Run on Days").padding(.leading, fieldLabelLeading / 2)
+              HStack(spacing: 6) {
+                ForEach(Weekday.allCases) { day in
+                  Button(action: { toggleDay(day) }) {
+                    Text(day.label)
+                      .font(.caption)
+                      .padding(.horizontal, 8)
+                      .padding(.vertical, 4)
+                      .background(submitConfig.scheduleDays.contains(day) ? Color.accentColor : Color.gray.opacity(0.2))
+                      .foregroundColor(submitConfig.scheduleDays.contains(day) ? .white : .primary)
+                      .cornerRadius(4)
+                  }
+                  .buttonStyle(.plain)
+                }
+              }
+            }
+            .padding(.leading, fieldLabelLeading)
+            
+            // Schedule Time
+            HStack {
+              Text("After")
+              Picker("Hour", selection: $submitConfig.scheduleAfterHour) {
+                ForEach(0..<24, id: \.self) { hour in
+                  Text(String(format: "%02d", hour)).tag(hour)
+                }
+              }
+              .labelsHidden()
+              .frame(width: 60)
+              Text(":")
+              Picker("Minute", selection: $submitConfig.scheduleAfterMinute) {
+                ForEach([0, 15, 30, 45], id: \.self) { minute in
+                  Text(String(format: "%02d", minute)).tag(minute)
+                }
+              }
+              .labelsHidden()
+              .frame(width: 60)
+              Spacer()
+            }
+            .padding(.leading, fieldLabelLeading)
+          }
+          
+          Divider().padding(.vertical, 8)
+          
+          // Test & Status
+          HStack {
+            Button(action: { Task { await testScript() } }) {
+              if submissionService.isRunning {
+                ProgressView()
+                  .controlSize(.small)
+                  .padding(.trailing, 4)
+              }
+              Text(submissionService.isRunning ? "Running…" : "Test Script")
+            }
+            .disabled(submitConfig.scriptTemplate.isEmpty || submissionService.isRunning)
+            
+            // "Submit Now" allows manual triggering of the script.
+            // Note: This execution updates `lastSubmittedAt` and `lastSubmittedWeek` 
+            // to prevent the automatic scheduler from running again in the same week (if configured).
+            Button(action: { Task { await submitNow() } }) {
+              Text("Submit Now")
+            }
+            .disabled(submitConfig.scriptTemplate.isEmpty || submissionService.isRunning)
+            .buttonStyle(.borderedProminent)
+            
+            Spacer()
+            
+            if let lastSubmit = submitConfig.lastSubmittedAt {
+              Text("Last: \(lastSubmit.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(.leading, fieldLabelLeading)
+          
+          if !submissionService.lastOutput.isEmpty || submissionService.lastError != nil {
+            VStack(alignment: .leading, spacing: 4) {
+              if let error = submissionService.lastError {
+                Text("Error: \(error)")
+                  .font(.caption)
+                  .foregroundColor(.red)
+              }
+              if !submissionService.lastOutput.isEmpty {
+                Text("Output:")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                ScrollView {
+                  Text(submissionService.lastOutput)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 60)
+                .padding(4)
+                .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+                .cornerRadius(4)
+              }
+            }
+            .padding(.leading, fieldLabelLeading)
+          }
+        }
+      }
     }
     .padding()
     .sheet(isPresented: $showingAddRule) {
@@ -131,6 +270,9 @@ struct CapExSettingsView: View {
     }
     .onChange(of: config) { _, newValue in
         saveConfig(newValue)
+    }
+    .onChange(of: submitConfig) { _, newValue in
+        saveSubmitConfig(newValue)
     }
   }
   
@@ -189,6 +331,53 @@ struct CapExSettingsView: View {
   
   private func startEditing(rule: CapExRuleUI) {
       editingRuleId = rule.id
+  }
+  
+  private func toggleDay(_ day: Weekday) {
+    if submitConfig.scheduleDays.contains(day) {
+      // Don't allow removing the last day
+      if submitConfig.scheduleDays.count > 1 {
+        submitConfig.scheduleDays.remove(day)
+      }
+    } else {
+      submitConfig.scheduleDays.insert(day)
+    }
+  }
+  
+  private func testScript() async {
+    do {
+      _ = try await submissionService.executeScript(template: submitConfig.scriptTemplate, config: config)
+    } catch {
+      // Error is already captured in submissionService.lastError
+    }
+  }
+  
+  private func submitNow() async {
+    do {
+      _ = try await submissionService.executeScript(template: submitConfig.scriptTemplate, config: config)
+      // Update submission tracking on success
+      submitConfig.lastSubmittedAt = Date()
+      let calendar = Calendar.current
+      let now = Date()
+      let currentISOWeek = calendar.component(.weekOfYear, from: now)
+      let currentYear = calendar.component(.yearForWeekOfYear, from: now)
+      submitConfig.lastSubmittedWeek = currentYear * 100 + currentISOWeek
+    } catch {
+      // Error is already captured in submissionService.lastError
+    }
+  }
+  
+  private func saveSubmitConfig(_ newValue: CapExSubmitConfigUI) {
+    if let stored = storedCapEx.first {
+      stored.submitScriptTemplate = newValue.scriptTemplate
+      stored.submitScheduleEnabled = newValue.scheduleEnabled
+      stored.submitScheduleDaysRaw = newValue.scheduleDaysRaw
+      stored.submitAfterHour = newValue.scheduleAfterHour
+      stored.submitAfterMinute = newValue.scheduleAfterMinute
+      stored.lastSubmittedAt = newValue.lastSubmittedAt
+      stored.lastSubmittedWeek = newValue.lastSubmittedWeek
+      try? context.save()
+    }
   }
   
   private func sectionHeader(_ title: String) -> some View {

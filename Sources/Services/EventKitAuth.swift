@@ -10,7 +10,11 @@ import OSLog
 /// Troubleshooting:
 /// - Ensure `Config/Info.plist` contains `NSCalendarsUsageDescription` and the macOS 14+ keys
 ///   `NSCalendarsFullAccessUsageDescription` and `NSCalendarsWriteOnlyAccessUsageDescription`.
-/// - Ensure entitlements enable App Sandbox and `com.apple.security.personal-information.calendars`.
+///   `NSCalendarsFullAccessUsageDescription` and `NSCalendarsWriteOnlyAccessUsageDescription`.
+/// - CRITICAL: Ensure entitlements file (`CalendarSync.entitlements`) specifically includes:
+///   `com.apple.security.personal-information.calendars` set to YES.
+///   Without this, `requestFullAccessToEvents` will silently fail or be denied immediately on Hardened Runtime builds.
+///   Do NOT remove this entitlement.
 /// - Status can remain `.notDetermined` until one of the request APIs is called.
 /// - Some systems update status asynchronously; we refresh immediately and after a short delay.
 final class EventKitAuth: ObservableObject {

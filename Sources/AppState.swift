@@ -27,6 +27,8 @@ final class AppState: ObservableObject {
     showDaily: true,
     rules: []
   )
+  
+  @Published var capExSubmitConfig: CapExSubmitConfigUI = CapExSubmitConfigUI()
 
   /// Available calendars; sourced from EventKit once authorized.
   @Published var availableCalendars: [CalendarOption] = []

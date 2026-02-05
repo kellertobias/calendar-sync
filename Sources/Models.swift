@@ -233,3 +233,25 @@ struct CapExRuleUI: Identifiable, Codable, Hashable {
   var participantsFilter: String?
   var matchMode: String = "contains"
 }
+
+/// Configuration for CapEx script submission.
+/// Supports templated placeholders like {{week_capex[0]}} for current week,
+/// {{week_capex[-1]}} for last week, etc.
+struct CapExSubmitConfigUI: Codable, Hashable {
+  /// The shell script template to execute, with placeholders.
+  var scriptTemplate: String = """
+osascript -e 'display notification "Last week: {{week_capex[-1]}}h" with title "CapEx Submitted"'
+"""
+  /// Whether scheduled execution is enabled.
+  var scheduleEnabled: Bool = false
+  /// Days of the week when the script should run.
+  var scheduleDays: Set<Weekday> = [.monday]
+  /// Run after this hour (0-23).
+  var scheduleAfterHour: Int = 10
+  /// Run after this minute (0-59).
+  var scheduleAfterMinute: Int = 0
+  /// When the script was last submitted.
+  var lastSubmittedAt: Date? = nil
+  /// ISO week number of the last submission to prevent double-submit.
+  var lastSubmittedWeek: Int? = nil
+}

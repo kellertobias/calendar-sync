@@ -231,6 +231,16 @@ import SwiftData
   var showDaily: Bool
   var capExPercentage: Int
   @Relationship(deleteRule: .cascade) var rules: [SDCapExRule]
+  @Relationship(deleteRule: .cascade) var submissions: [SDCapExSubmission]
+  
+  // Submission configuration
+  var submitScriptTemplate: String
+  var submitScheduleEnabled: Bool
+  var submitScheduleDaysRaw: String  // Comma-separated weekday names: "monday,tuesday"
+  var submitAfterHour: Int
+  var submitAfterMinute: Int
+  var lastSubmittedAt: Date?
+  var lastSubmittedWeek: Int?
 
   init(
     id: UUID = UUID(),
@@ -238,7 +248,15 @@ import SwiftData
     historyDays: Int,
     showDaily: Bool,
     capExPercentage: Int = 100,
-    rules: [SDCapExRule]
+    rules: [SDCapExRule],
+    submissions: [SDCapExSubmission] = [],
+    submitScriptTemplate: String = "",
+    submitScheduleEnabled: Bool = false,
+    submitScheduleDaysRaw: String = "monday",
+    submitAfterHour: Int = 10,
+    submitAfterMinute: Int = 0,
+    lastSubmittedAt: Date? = nil,
+    lastSubmittedWeek: Int? = nil
   ) {
     self.id = id
     self.workingTimeCalendarId = workingTimeCalendarId
@@ -246,8 +264,17 @@ import SwiftData
     self.showDaily = showDaily
     self.capExPercentage = capExPercentage
     self.rules = rules
+    self.submissions = submissions
+    self.submitScriptTemplate = submitScriptTemplate
+    self.submitScheduleEnabled = submitScheduleEnabled
+    self.submitScheduleDaysRaw = submitScheduleDaysRaw
+    self.submitAfterHour = submitAfterHour
+    self.submitAfterMinute = submitAfterMinute
+    self.lastSubmittedAt = lastSubmittedAt
+    self.lastSubmittedWeek = lastSubmittedWeek
   }
 }
+
 
 @Model final class SDCapExRule {
   var id: UUID
@@ -269,5 +296,19 @@ import SwiftData
     self.titleFilter = titleFilter
     self.participantsFilter = participantsFilter
     self.matchMode = matchMode
+  }
+}
+
+@Model final class SDCapExSubmission {
+  var id: UUID
+  var submittedAt: Date
+  /// Unique identifier for the period submitted.
+  /// Format: "WEEK-YYYY-WW" (ISO week) or "DAY-YYYY-MM-DD"
+  @Attribute(.unique) var periodIdentifier: String
+  
+  init(id: UUID = UUID(), submittedAt: Date, periodIdentifier: String) {
+    self.id = id
+    self.submittedAt = submittedAt
+    self.periodIdentifier = periodIdentifier
   }
 }
