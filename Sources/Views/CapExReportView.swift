@@ -162,7 +162,8 @@ struct CapExReportView: View {
           } else {
               Button(action: {
                   Task {
-                      await submit(identifier: identifier)
+                      // Pass periodStart as override date so the script uses THIS week's data regardless of template index
+                      await submit(identifier: identifier, overrideDate: periodStart)
                   }
               }) {
                   if submissionService.isRunning {
@@ -212,21 +213,7 @@ struct CapExReportView: View {
                  .frame(width: 80, alignment: .trailing)
              
              // Daily Submission Button
-             if isSubmitted {
-                 Image(systemName: "checkmark.circle.fill")
-                     .foregroundStyle(.green)
-                     .help("Already submitted")
-             } else {
-                 Button(action: {
-                     Task { await submit(identifier: identifier) }
-                 }) {
-                    Image(systemName: "paperplane")
-                 }
-                 .buttonStyle(.borderless)
-                 .disabled(submissionService.isRunning || appState.capExSubmitConfig.scriptTemplate.isEmpty)
-                 .help("Submit this day")
-             }
-
+             // Daily submission button removed
           } else {
               Spacer()
               Text("-")
@@ -235,13 +222,14 @@ struct CapExReportView: View {
       .padding(.vertical, 4)
   }
   
-  private func submit(identifier: String) async {
+  private func submit(identifier: String, overrideDate: Date? = nil) async {
       do {
           try await submissionService.submit(
             template: appState.capExSubmitConfig.scriptTemplate,
             config: appState.capExConfig,
             periodIdentifier: identifier,
-            context: modelContext
+            context: modelContext,
+            overrideDate: overrideDate
           )
       } catch {
           print("Submission failed: \(error)")

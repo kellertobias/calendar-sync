@@ -16,6 +16,9 @@ final class CapExSubmissionService: ObservableObject {
   
   /// Placeholder regex pattern: matches {{week_capex[N]}} where N is an integer (positive or negative).
   private let placeholderPattern = #"\{\{week_capex\[(-?\d+)\]\}\}"#
+  private let weekNumberPattern = #"\{\{week_number\}\}"#
+  private let startDatePattern = #"\{\{start\s+"([^"]+)"\}\}"#
+  private let endDatePattern = #"\{\{end\s+"([^"]+)"\}\}"#
 
   // Helper to persist submissions
   private func recordSubmission(periodIdentifier: String, context: ModelContext) {
@@ -52,9 +55,10 @@ final class CapExSubmissionService: ObservableObject {
   ///   - config: CapEx Config
   ///   - periodIdentifier: Unique identifier for the period (e.g. "WEEK-2026-06")
   ///   - context: SwiftData context for persistence
-  func submit(template: String, config: CapExConfigUI, periodIdentifier: String, context: ModelContext) async throws {
+  ///   - overrideDate: If set, use this date as the reference implementation "now" for calculating placeholders.
+  func submit(template: String, config: CapExConfigUI, periodIdentifier: String, context: ModelContext, overrideDate: Date? = nil) async throws {
       // Execute script
-      _ = try await executeScript(template: template, config: config)
+      _ = try await executeScript(template: template, config: config, overrideDate: overrideDate)
       
       // Record success
       recordSubmission(periodIdentifier: periodIdentifier, context: context)
@@ -65,9 +69,10 @@ final class CapExSubmissionService: ObservableObject {
   /// - Parameters:
   ///   - template: The shell script template containing placeholders.
   ///   - config: CapEx configuration for calculating weekly hours.
+  ///   - overrideDate: If set, substitutes placeholders relative to this date instead of Date().
   /// - Returns: The stdout output from the script.
   /// - Throws: Error if script execution fails.
-  func executeScript(template: String, config: CapExConfigUI) async throws -> String {
+  func executeScript(template: String, config: CapExConfigUI, overrideDate: Date? = nil) async throws -> String {
     guard !template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw SubmissionError.emptyScript
     }
@@ -77,7 +82,7 @@ final class CapExSubmissionService: ObservableObject {
     defer { isRunning = false }
     
     // Substitute placeholders
-    let substituted = await substitutePlaceholders(template: template, config: config)
+    let substituted = await substitutePlaceholders(template: template, config: config, overrideDate: overrideDate)
     logger.info("Executing script: \(substituted)")
     
     // Execute via /bin/sh
@@ -126,8 +131,10 @@ final class CapExSubmissionService: ObservableObject {
   /// - Parameters:
   ///   - template: The script template with placeholders.
   ///   - config: CapEx configuration for calculation.
+  ///   - overrideDate: If set, this date is treated as "now". Additionally, if provided,
+  ///                   any placeholder (regardless of index) will use this date's week/day.
   /// - Returns: The template with placeholders replaced by values.
-  func substitutePlaceholders(template: String, config: CapExConfigUI) async -> String {
+  func substitutePlaceholders(template: String, config: CapExConfigUI, overrideDate: Date? = nil) async -> String {
     var result = template
     
     // Find all matches
@@ -151,10 +158,26 @@ final class CapExSubmissionService: ObservableObject {
     
     // Calculate capex for each offset
     var values: [Int: TimeInterval] = [:]
-    for offset in offsets {
-      let (start, end) = weekRange(offset: offset)
-      let calcResult = await engine.calculate(config: config, start: start, end: end)
-      values[offset] = calcResult.netCapExSeconds
+    
+    // If overrideDate is set, we ignore the offset in the template and treat it as offset 0 relative to the overrideDate.
+    // Effectively, we map ANY offset found in the template to the calculated value for overrideDate.
+    if let overrideDate = overrideDate {
+        // Calculate the value for the specific override date
+        // Note: weekRange(offset: 0, referenceDate: overrideDate)
+        let (start, end) = weekRange(offset: 0, referenceDate: overrideDate)
+        let calcResult = await engine.calculate(config: config, start: start, end: end)
+        
+        // Map ALL found offsets to this single result
+        for offset in offsets {
+            values[offset] = calcResult.netCapExSeconds
+        }
+    } else {
+        // Default behavior: calculate for each offset relative to current date
+        for offset in offsets {
+          let (start, end) = weekRange(offset: offset)
+          let calcResult = await engine.calculate(config: config, start: start, end: end)
+          values[offset] = calcResult.netCapExSeconds
+        }
     }
     
     // Replace placeholders with values
@@ -169,18 +192,83 @@ final class CapExSubmissionService: ObservableObject {
       }
     }
     
+    // --- Metadata placeholders (week_number, start, end) ---
+    // Determine the reference date for metadata.
+    // 1. If overrideDate is present, use it.
+    // 2. Else, if week_capex matches found, use the offset from the first match relative to now.
+    // 3. Else, use now (offset 0).
+    var referenceDate: Date
+    var referenceOffset: Int = 0
+    
+    if let override = overrideDate {
+        referenceDate = override
+    } else {
+        // Find first week_capex offset if available
+        if let firstOffset = offsets.sorted().first { // Use sorted first or just first? logic implies "use the week from week_capex"
+             referenceOffset = firstOffset
+             // Calculate date from offset relative to now
+             let (start, _) = weekRange(offset: firstOffset) // weekRange uses Date() internally if no ref
+             referenceDate = start
+        } else {
+             referenceDate = Date()
+        }
+    }
+    
+    let calendar = Calendar(identifier: .iso8601)
+    
+    // Replace {{week_number}}
+    if let range = result.range(of: weekNumberPattern, options: .regularExpression) {
+         let week = calendar.component(.weekOfYear, from: referenceDate)
+         result.replaceSubrange(range, with: String(week))
+    }
+    
+    // Replace {{start "FORMAT"}}
+    // Since regex replacement with groups needs careful handling in swift strings, we iterate matches manually
+    // We re-create regex for start/end because 'result' has changed (capex placeholders replaced)
+    
+    let replaceDatePlaceholder = { (pattern: String, date: Date) -> Void in
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        let matches = regex.matches(in: result, options: [], range: NSRange(result.startIndex..., in: result))
+        
+        for match in matches.reversed() {
+            guard let matchRange = Range(match.range, in: result),
+                  let formatRange = Range(match.range(at: 1), in: result) else { continue }
+            
+            let formatString = String(result[formatRange])
+            let formatter = DateFormatter()
+            formatter.dateFormat = formatString
+            let dateString = formatter.string(from: date)
+            
+            result.replaceSubrange(matchRange, with: dateString)
+        }
+    }
+    
+    let (weekStart, weekEnd) = weekRange(offset: 0, referenceDate: referenceDate)
+    // Note: weekEnd from weekRange is usually the start of the next week or end of current?
+    // weekRange implementation: 
+    // let offsetWeekEnd = calendar.date(byAdding: .day, value: 7, to: offsetWeekStart)
+    // This effectively gives the START of the next week (7 days later).
+    // For "end date" display, users usually expect Sunday (or end of week).
+    // Let's assume standard behavior: end date is usually defined as the last day of the week.
+    // Subtract 1 second or 1 day depending on desired inclusivity.
+    // If format is DD.MM.YYYY, 1 second subtraction gives the previous day effectively.
+    let displayEnd = calendar.date(byAdding: .second, value: -1, to: weekEnd) ?? weekEnd
+    
+    replaceDatePlaceholder(startDatePattern, weekStart)
+    replaceDatePlaceholder(endDatePattern, displayEnd)
+    
     return result
   }
   
   /// Calculates the start and end dates for an ISO week with the given offset.
   /// - Parameter offset: 0 for current week, -1 for last week, etc.
+  /// - Parameter referenceDate: Date to count offset from. Default is now.
   /// - Returns: Tuple of (weekStart, weekEnd) dates.
-  func weekRange(offset: Int) -> (start: Date, end: Date) {
+  func weekRange(offset: Int, referenceDate: Date = Date()) -> (start: Date, end: Date) {
     let calendar = Calendar(identifier: .iso8601)
-    let now = Date()
     
-    // Get current week components
-    var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+    // Get reference week components
+    var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: referenceDate)
     
     // Apply offset
     if let currentWeekStart = calendar.date(from: components) {
@@ -190,7 +278,7 @@ final class CapExSubmissionService: ObservableObject {
     }
     
     // Fallback
-    return (now, now)
+    return (referenceDate, referenceDate)
   }
   
   /// Checks if the script should run based on schedule settings.

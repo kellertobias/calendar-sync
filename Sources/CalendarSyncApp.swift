@@ -61,7 +61,7 @@ struct CalendarSyncApp: App {
           appState.availableCalendars = calendars.calendars
           
           // Start CapEx submission scheduler
-          capExScheduler.configure(appState: appState)
+          capExScheduler.configure(appState: appState, modelContext: persistence.container.mainContext)
 
           let hasEnabled = appState.syncs.contains { $0.enabled }
           if !hasEnabled {

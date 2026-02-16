@@ -18,230 +18,242 @@ struct CapExSettingsView: View {
   private let fieldLabelLeading: CGFloat = 16
 
   var body: some View {
-    Form {
-      Section(header: sectionHeader("Configuration").padding(.top, 14).padding(.bottom, 4)) {
-        VStack(alignment: .leading, spacing: 12) {
-            CalendarMenuPicker(
-                title: "Working Time Calendar",
-                calendars: appState.availableCalendars,
-                selection: $config.workingTimeCalendarId
-            )
-            .padding(.leading, fieldLabelLeading)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("History Period").padding(.horizontal, fieldLabelLeading / 2)
-                HStack {
-                    Text("\(config.historyDays) days")
-                    Spacer()
-                    Stepper("", value: $config.historyDays, in: 7...365).labelsHidden()
-                }
-                .padding(.vertical, 4)
-            }
-            .padding(.leading, fieldLabelLeading)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("CapEx Percentage").padding(.horizontal, fieldLabelLeading / 2)
-                HStack {
-                    Text("\(config.capExPercentage)%")
-                        .frame(width: 40, alignment: .trailing)
-                    Slider(value: Binding(
-                        get: { Double(config.capExPercentage) },
-                        set: { config.capExPercentage = Int($0) }
-                    ), in: 1...100, step: 1)
-                }
-                .padding(.vertical, 4)
-            }
-            .padding(.leading, fieldLabelLeading)
-
-            Toggle("Show Daily Breakdown", isOn: $config.showDaily)
-                .padding(.leading, fieldLabelLeading)
-        }
-      }
-      
-      Section(header: sectionHeader("Exclusion Rules").padding(.top, 24).padding(.bottom, 4)) {
-          if config.rules.isEmpty {
-              Text("No exclusion rules defined.")
-                  .foregroundStyle(.secondary)
-                  .padding(.leading, fieldLabelLeading)
-          } else {
-              ForEach(config.rules) { rule in
-                  HStack(alignment: .top) {
-                      VStack(alignment: .leading, spacing: 4) {
-                          if let cal = appState.availableCalendars.first(where: { $0.id == rule.calendarId }) {
-                                if let color = Color(hex: cal.colorHex) {
-                                  Text("●").foregroundColor(color) + Text(" \(cal.name)")
-                                } else {
-                                  Text("●").foregroundColor(.secondary) + Text(" \(cal.name)")
-                                }
-                          } else {
-                              Text("Unknown Calendar").foregroundStyle(.red)
-                          }
-                          
-                          if let title = rule.titleFilter, !title.isEmpty {
-                              Text("Title: \(title)").font(.caption).foregroundStyle(.secondary)
-                          }
-                          if let part = rule.participantsFilter, !part.isEmpty {
-                              Text("Participants: \(part)").font(.caption).foregroundStyle(.secondary)
-                          }
-                          if (rule.titleFilter?.isEmpty ?? true) && (rule.participantsFilter?.isEmpty ?? true) {
-                              Text("All events").font(.caption).foregroundStyle(.secondary)
-                          }
-                      }
-                      Spacer()
-                      Button(action: { startEditing(rule: rule) }) {
-                          Image(systemName: "pencil")
-                      }
-                      .buttonStyle(.borderless)
-                  }
-                  .padding(.vertical, 4)
-              }
-              .onDelete { indexSet in
-                  config.rules.remove(atOffsets: indexSet)
-              }
-          }
+    ScrollView {
+      VStack(alignment: .leading, spacing: 24) {
         
-        Button(action: { showingAddRule = true }) {
-            Label("Add Exclusion Rule", systemImage: "plus")
+        // Configuration Section
+        VStack(alignment: .leading, spacing: 8) {
+             sectionHeader("Configuration")
+             
+             VStack(alignment: .leading, spacing: 12) {
+                CalendarMenuPicker(
+                    title: "Working Time Calendar",
+                    calendars: appState.availableCalendars,
+                    selection: $config.workingTimeCalendarId
+                )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("History Period")
+                    HStack {
+                        Text("\(config.historyDays) days")
+                        Spacer()
+                        Stepper("", value: $config.historyDays, in: 7...365).labelsHidden()
+                    }
+                    .padding(.vertical, 4)
+                }
+    
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CapEx Percentage")
+                    HStack {
+                        Text("\(config.capExPercentage)%")
+                            .frame(width: 40, alignment: .trailing)
+                        Slider(value: Binding(
+                            get: { Double(config.capExPercentage) },
+                            set: { config.capExPercentage = Int($0) }
+                        ), in: 1...100, step: 1)
+                    }
+                    .padding(.vertical, 4)
+                }
+    
+                Toggle("Show Daily Breakdown", isOn: $config.showDaily)
+            }
+            .padding(.leading, fieldLabelLeading)
         }
-        .padding(.top, 8)
-      }
-      
-      // Script Submission Section
-      Section(header: sectionHeader("Submit Script").padding(.top, 24).padding(.bottom, 4)) {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Script Template")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.leading, fieldLabelLeading / 2)
-          
-          TextEditor(text: $submitConfig.scriptTemplate)
-            .font(.system(.body, design: .monospaced))
-            .frame(minHeight: 80)
-            .padding(4)
-            .background(Color(NSColor.textBackgroundColor))
-            .cornerRadius(6)
-            .overlay(
-              RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-            )
-            .padding(.leading, fieldLabelLeading)
-          
-          Text("Use {{week_capex[0]}} for current week, {{week_capex[-1]}} for last week, etc.")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .padding(.leading, fieldLabelLeading)
-          
-          Divider().padding(.vertical, 8)
-          
-          // Schedule Toggle
-          Toggle("Enable Scheduled Submission", isOn: $submitConfig.scheduleEnabled)
-            .padding(.leading, fieldLabelLeading)
-          
-          if submitConfig.scheduleEnabled {
-            // Schedule Days
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Run on Days").padding(.leading, fieldLabelLeading / 2)
-              HStack(spacing: 6) {
-                ForEach(Weekday.allCases) { day in
-                  Button(action: { toggleDay(day) }) {
-                    Text(day.label)
-                      .font(.caption)
-                      .padding(.horizontal, 8)
+
+        // Exclusion Rules Section
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Exclusion Rules")
+            
+            VStack(alignment: .leading, spacing: 12) {
+              if config.rules.isEmpty {
+                  Text("No exclusion rules defined.")
+                      .foregroundStyle(.secondary)
+              } else {
+                  ForEach(config.rules) { rule in
+                      HStack(alignment: .top) {
+                          VStack(alignment: .leading, spacing: 4) {
+                              if let cal = appState.availableCalendars.first(where: { $0.id == rule.calendarId }) {
+                                    if let color = Color(hex: cal.colorHex) {
+                                      Text("●").foregroundColor(color) + Text(" \(cal.name)")
+                                    } else {
+                                      Text("●").foregroundColor(.secondary) + Text(" \(cal.name)")
+                                    }
+                              } else {
+                                  Text("Unknown Calendar").foregroundStyle(.red)
+                              }
+                              
+                              if let title = rule.titleFilter, !title.isEmpty {
+                                  Text("Title: \(title)").font(.caption).foregroundStyle(.secondary)
+                              }
+                              if let part = rule.participantsFilter, !part.isEmpty {
+                                  Text("Participants: \(part)").font(.caption).foregroundStyle(.secondary)
+                              }
+                              if (rule.titleFilter?.isEmpty ?? true) && (rule.participantsFilter?.isEmpty ?? true) {
+                                  Text("All events").font(.caption).foregroundStyle(.secondary)
+                              }
+                          }
+                          Spacer()
+                          Button(action: { startEditing(rule: rule) }) {
+                              Image(systemName: "pencil")
+                                  .foregroundStyle(.blue)
+                          }
+                          .buttonStyle(.borderless)
+                          .help("Edit rule")
+                          
+                          Button(action: { deleteRule(rule) }) {
+                              Image(systemName: "trash")
+                                  .foregroundStyle(.red)
+                          }
+                          .buttonStyle(.borderless)
+                          .help("Delete rule")
+                      }
                       .padding(.vertical, 4)
-                      .background(submitConfig.scheduleDays.contains(day) ? Color.accentColor : Color.gray.opacity(0.2))
-                      .foregroundColor(submitConfig.scheduleDays.contains(day) ? .white : .primary)
-                      .cornerRadius(4)
+                      
+                      Divider()
                   }
-                  .buttonStyle(.plain)
-                }
+                  // Note: onDelete is not available outside List/ForEach native, so we need a different deletion UI or stick to List for this part?
+                  // Providing a delete button in the row or edit sheet is safer.
+                  // Let's add a delete button next to edit.
+              }
+            
+              Button(action: { showingAddRule = true }) {
+                Label("Add Exclusion Rule", systemImage: "plus")
               }
             }
             .padding(.leading, fieldLabelLeading)
-            
-            // Schedule Time
-            HStack {
-              Text("After")
-              Picker("Hour", selection: $submitConfig.scheduleAfterHour) {
-                ForEach(0..<24, id: \.self) { hour in
-                  Text(String(format: "%02d", hour)).tag(hour)
-                }
-              }
-              .labelsHidden()
-              .frame(width: 60)
-              Text(":")
-              Picker("Minute", selection: $submitConfig.scheduleAfterMinute) {
-                ForEach([0, 15, 30, 45], id: \.self) { minute in
-                  Text(String(format: "%02d", minute)).tag(minute)
-                }
-              }
-              .labelsHidden()
-              .frame(width: 60)
-              Spacer()
-            }
-            .padding(.leading, fieldLabelLeading)
-          }
+        }
+        
+        // Script Submission Section
+        VStack(alignment: .leading, spacing: 8) {
+          sectionHeader("Submit Script")
           
-          Divider().padding(.vertical, 8)
-          
-          // Test & Status
-          HStack {
-            Button(action: { Task { await testScript() } }) {
-              if submissionService.isRunning {
-                ProgressView()
-                  .controlSize(.small)
-                  .padding(.trailing, 4)
-              }
-              Text(submissionService.isRunning ? "Running…" : "Test Script")
-            }
-            .disabled(submitConfig.scriptTemplate.isEmpty || submissionService.isRunning)
-            
-            // "Submit Now" allows manual triggering of the script.
-            // Note: This execution updates `lastSubmittedAt` and `lastSubmittedWeek` 
-            // to prevent the automatic scheduler from running again in the same week (if configured).
-            Button(action: { Task { await submitNow() } }) {
-              Text("Submit Now")
-            }
-            .disabled(submitConfig.scriptTemplate.isEmpty || submissionService.isRunning)
-            .buttonStyle(.borderedProminent)
-            
-            Spacer()
-            
-            if let lastSubmit = submitConfig.lastSubmittedAt {
-              Text("Last: \(lastSubmit.formatted(date: .abbreviated, time: .shortened))")
+          VStack(alignment: .leading, spacing: 12) {
+              Text("Script Template")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            }
+              
+              TextEditor(text: $submitConfig.scriptTemplate)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 80)
+                .padding(4)
+                .background(Color(NSColor.textBackgroundColor))
+                .cornerRadius(6)
+                .overlay(
+                  RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+              
+              Text("Use {{week_capex[0]}} for current week, {{week_capex[-1]}} for last week.\nAlso: {{week_number}}, {{start \"DD.MM.YYYY\"}}, {{end \"YYYY-MM-DD\"}}")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+              
+              Divider().padding(.vertical, 8)
+              
+              // Schedule Toggle
+              Toggle("Enable Scheduled Submission", isOn: $submitConfig.scheduleEnabled)
+              
+              if submitConfig.scheduleEnabled {
+                // Schedule Days
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("Run on Days")
+                  HStack(spacing: 6) {
+                    ForEach(Weekday.allCases) { day in
+                      Button(action: { toggleDay(day) }) {
+                        Text(day.label)
+                          .font(.caption)
+                          .padding(.horizontal, 8)
+                          .padding(.vertical, 4)
+                          .background(submitConfig.scheduleDays.contains(day) ? Color.accentColor : Color.gray.opacity(0.2))
+                          .foregroundColor(submitConfig.scheduleDays.contains(day) ? .white : .primary)
+                          .cornerRadius(4)
+                      }
+                      .buttonStyle(.plain)
+                    }
+                  }
+                }
+                
+                // Schedule Time
+                HStack {
+                  Text("After")
+                  Picker("Hour", selection: $submitConfig.scheduleAfterHour) {
+                    ForEach(0..<24, id: \.self) { hour in
+                      Text(String(format: "%02d", hour)).tag(hour)
+                    }
+                  }
+                  .labelsHidden()
+                  .frame(width: 60)
+                  Text(":")
+                  Picker("Minute", selection: $submitConfig.scheduleAfterMinute) {
+                    ForEach(Array(stride(from: 0, to: 60, by: 5)), id: \.self) { minute in
+                      Text(String(format: "%02d", minute)).tag(minute)
+                    }
+                  }
+                  .labelsHidden()
+                  .frame(width: 60)
+                  Spacer()
+                }
+              }
+              
+              Divider().padding(.vertical, 8)
+              
+              // Test & Status
+              HStack {
+                Button(action: { Task { await testScript() } }) {
+                  if submissionService.isRunning {
+                    ProgressView()
+                      .controlSize(.small)
+                      .padding(.trailing, 4)
+                  }
+                  Text(submissionService.isRunning ? "Running…" : "Test Script")
+                }
+                .disabled(submitConfig.scriptTemplate.isEmpty || submissionService.isRunning)
+                
+                Button(action: { Task { await submitNow() } }) {
+                  Text("Submit Now")
+                }
+                .disabled(submitConfig.scriptTemplate.isEmpty || submissionService.isRunning)
+                .buttonStyle(.borderedProminent)
+                
+                Spacer()
+                
+                if let lastSubmit = submitConfig.lastSubmittedAt {
+                  Text("Last: \(lastSubmit.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              
+              if !submissionService.lastOutput.isEmpty || submissionService.lastError != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                  if let error = submissionService.lastError {
+                    Text("Error: \(error)")
+                      .font(.caption)
+                      .foregroundColor(.red)
+                  }
+                  if !submissionService.lastOutput.isEmpty {
+                    Text("Output:")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    ScrollView {
+                      Text(submissionService.lastOutput)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 60)
+                    .padding(4)
+                    .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+                    .cornerRadius(4)
+                  }
+                }
+              }
           }
           .padding(.leading, fieldLabelLeading)
-          
-          if !submissionService.lastOutput.isEmpty || submissionService.lastError != nil {
-            VStack(alignment: .leading, spacing: 4) {
-              if let error = submissionService.lastError {
-                Text("Error: \(error)")
-                  .font(.caption)
-                  .foregroundColor(.red)
-              }
-              if !submissionService.lastOutput.isEmpty {
-                Text("Output:")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                ScrollView {
-                  Text(submissionService.lastOutput)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 60)
-                .padding(4)
-                .background(Color(NSColor.textBackgroundColor).opacity(0.5))
-                .cornerRadius(4)
-              }
-            }
-            .padding(.leading, fieldLabelLeading)
-          }
         }
       }
+      .padding()
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding()
     .sheet(isPresented: $showingAddRule) {
         RuleEditor(
             rule: CapExRuleUI(calendarId: appState.availableCalendars.first?.id ?? ""),
@@ -331,6 +343,12 @@ struct CapExSettingsView: View {
   
   private func startEditing(rule: CapExRuleUI) {
       editingRuleId = rule.id
+  }
+  
+  private func deleteRule(_ rule: CapExRuleUI) {
+      if let index = config.rules.firstIndex(where: { $0.id == rule.id }) {
+          config.rules.remove(at: index)
+      }
   }
   
   private func toggleDay(_ day: Weekday) {

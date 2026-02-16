@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import AppKit
+import SwiftData
 
 /// Scheduler that monitors system wake and unlock events to trigger CapEx script submission
 /// when the configured schedule conditions are met.
@@ -9,7 +10,8 @@ final class CapExSubmissionScheduler: ObservableObject {
   private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "CalendarSync", category: "CapExScheduler")
   private let submissionService = CapExSubmissionService()
   private weak var appState: AppState?
-  private var modelContext: Any?  // SwiftData.ModelContext - using Any to avoid import issues
+  private var modelContext: ModelContext?
+  private var timer: Timer?
   
   /// Whether the scheduler is actively monitoring for wake/unlock events.
   @Published var isActive: Bool = false
@@ -17,8 +19,9 @@ final class CapExSubmissionScheduler: ObservableObject {
   init() {}
   
   /// Configures the scheduler with required dependencies and starts monitoring.
-  func configure(appState: AppState) {
+  func configure(appState: AppState, modelContext: ModelContext) {
     self.appState = appState
+    self.modelContext = modelContext
     startMonitoring()
   }
   
@@ -42,6 +45,14 @@ final class CapExSubmissionScheduler: ObservableObject {
       name: NSNotification.Name("com.apple.screenIsUnlocked"),
       object: nil
     )
+
+    // Timer for checking every minute
+    timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+      self?.checkAndSubmit()
+    }
+    
+    // Initial check
+    checkAndSubmit()
     
     logger.info("CapEx submission scheduler started monitoring")
   }
@@ -53,6 +64,8 @@ final class CapExSubmissionScheduler: ObservableObject {
     
     NSWorkspace.shared.notificationCenter.removeObserver(self)
     DistributedNotificationCenter.default().removeObserver(self)
+    timer?.invalidate()
+    timer = nil
     
     logger.info("CapEx submission scheduler stopped monitoring")
   }
@@ -86,13 +99,22 @@ final class CapExSubmissionScheduler: ObservableObject {
     
     Task {
       do {
-        let output = try await submissionService.executeScript(
-          template: submitConfig.scriptTemplate,
-          config: capExConfig
-        )
-        logger.info("CapEx submission succeeded: \(output.prefix(100), privacy: .private)")
+        guard let context = self.modelContext else {
+             logger.error("ModelContext not available for submission")
+             return
+        }
         
-        // Update last submitted tracking
+        let identifier = CapExSubmissionService.weekIdentifier(for: Date())
+        
+        try await submissionService.submit(
+          template: submitConfig.scriptTemplate,
+          config: capExConfig,
+          periodIdentifier: identifier,
+          context: context
+        )
+        logger.info("CapEx submission succeeded")
+        
+        // Update in-memory state for immediate UI feedback (though Query will update too)
         let calendar = Calendar.current
         let now = Date()
         let currentYear = calendar.component(.yearForWeekOfYear, from: now)
@@ -103,7 +125,7 @@ final class CapExSubmissionScheduler: ObservableObject {
         appState.capExSubmitConfig.lastSubmittedWeek = weekKey
         
       } catch {
-        logger.error("CapEx submission failed: \(error.localizedDescription, privacy: .public)")
+        logger.error("CapEx submission failed: \(error.localizedDescription)")
       }
     }
   }

@@ -240,7 +240,7 @@ struct CapExRuleUI: Identifiable, Codable, Hashable {
 struct CapExSubmitConfigUI: Codable, Hashable {
   /// The shell script template to execute, with placeholders.
   var scriptTemplate: String = """
-osascript -e 'display notification "Last week: {{week_capex[-1]}}h" with title "CapEx Submitted"'
+osascript -e 'display notification "Week {{week_number}} ({{start "dd.MM"}} - {{end "dd.MM"}}): {{week_capex[0]}}h" with title "CapEx Submitted"'
 """
   /// Whether scheduled execution is enabled.
   var scheduleEnabled: Bool = false
