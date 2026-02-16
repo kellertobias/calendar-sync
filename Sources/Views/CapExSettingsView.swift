@@ -14,6 +14,7 @@ struct CapExSettingsView: View {
   @State private var editingRuleId: UUID?
   @State private var testOutput: String = ""
   @State private var showingTestOutput = false
+  @State private var showSavedIndicator = false
   
   private let fieldLabelLeading: CGFloat = 16
 
@@ -128,9 +129,17 @@ struct CapExSettingsView: View {
           sectionHeader("Submit Script")
           
           VStack(alignment: .leading, spacing: 12) {
-              Text("Script Template")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+              HStack {
+                Text("Script Template")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                if showSavedIndicator {
+                  Text("Saved")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                    .transition(.opacity)
+                }
+              }
               
               TextEditor(text: $submitConfig.scriptTemplate)
                 .font(.system(.body, design: .monospaced))
@@ -339,8 +348,16 @@ struct CapExSettingsView: View {
         context.insert(newConfig)
     }
     try? context.save()
+    withAnimation {
+      showSavedIndicator = true
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      withAnimation {
+        showSavedIndicator = false
+      }
+    }
   }
-  
+
   private func startEditing(rule: CapExRuleUI) {
       editingRuleId = rule.id
   }
@@ -394,7 +411,35 @@ struct CapExSettingsView: View {
       stored.submitAfterMinute = newValue.scheduleAfterMinute
       stored.lastSubmittedAt = newValue.lastSubmittedAt
       stored.lastSubmittedWeek = newValue.lastSubmittedWeek
-      try? context.save()
+    } else {
+      // Create a new config record so the submit config is not lost
+      let newConfig = SDCapExConfig(
+        id: config.id,
+        workingTimeCalendarId: config.workingTimeCalendarId,
+        historyDays: config.historyDays,
+        showDaily: config.showDaily,
+        capExPercentage: config.capExPercentage,
+        rules: config.rules.map {
+          SDCapExRule(id: $0.id, calendarId: $0.calendarId, titleFilter: $0.titleFilter, participantsFilter: $0.participantsFilter, matchMode: $0.matchMode)
+        },
+        submitScriptTemplate: newValue.scriptTemplate,
+        submitScheduleEnabled: newValue.scheduleEnabled,
+        submitScheduleDaysRaw: newValue.scheduleDaysRaw,
+        submitAfterHour: newValue.scheduleAfterHour,
+        submitAfterMinute: newValue.scheduleAfterMinute,
+        lastSubmittedAt: newValue.lastSubmittedAt,
+        lastSubmittedWeek: newValue.lastSubmittedWeek
+      )
+      context.insert(newConfig)
+    }
+    try? context.save()
+    withAnimation {
+      showSavedIndicator = true
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      withAnimation {
+        showSavedIndicator = false
+      }
     }
   }
   
