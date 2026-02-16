@@ -233,23 +233,31 @@ struct CapExSettingsView: View {
                 }
               }
               
-              if !submissionService.lastOutput.isEmpty || submissionService.lastError != nil {
+              if submissionService.isRunning || !submissionService.lastOutput.isEmpty || submissionService.lastError != nil {
                 VStack(alignment: .leading, spacing: 4) {
                   if let error = submissionService.lastError {
                     Text("Error: \(error)")
                       .font(.caption)
                       .foregroundColor(.red)
                   }
-                  if !submissionService.lastOutput.isEmpty {
+                  if submissionService.isRunning || !submissionService.lastOutput.isEmpty {
                     Text("Output:")
                       .font(.caption)
                       .foregroundStyle(.secondary)
-                    ScrollView {
-                      Text(submissionService.lastOutput)
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ScrollViewReader { proxy in
+                      ScrollView {
+                        Text(submissionService.lastOutput)
+                          .font(.system(.caption, design: .monospaced))
+                          .frame(maxWidth: .infinity, alignment: .leading)
+                        Color.clear.frame(height: 1).id("outputEnd")
+                      }
+                      .onChange(of: submissionService.lastOutput) { _, _ in
+                        if submissionService.isRunning {
+                          proxy.scrollTo("outputEnd", anchor: .bottom)
+                        }
+                      }
                     }
-                    .frame(maxHeight: 60)
+                    .frame(maxHeight: 150)
                     .padding(4)
                     .background(Color(NSColor.textBackgroundColor).opacity(0.5))
                     .cornerRadius(4)
@@ -381,7 +389,7 @@ struct CapExSettingsView: View {
   
   private func testScript() async {
     do {
-      _ = try await submissionService.executeScript(template: submitConfig.scriptTemplate, config: config)
+      _ = try await submissionService.executeScript(template: submitConfig.scriptTemplate, config: config, streamOutput: true)
     } catch {
       // Error is already captured in submissionService.lastError
     }

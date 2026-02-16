@@ -70,53 +70,41 @@ final class CapExSubmissionService: ObservableObject {
   ///   - template: The shell script template containing placeholders.
   ///   - config: CapEx configuration for calculating weekly hours.
   ///   - overrideDate: If set, substitutes placeholders relative to this date instead of Date().
+  ///   - streamOutput: If true, streams stdout to `lastOutput` in real-time (for test mode).
   /// - Returns: The stdout output from the script.
   /// - Throws: Error if script execution fails.
-  func executeScript(template: String, config: CapExConfigUI, overrideDate: Date? = nil) async throws -> String {
+  func executeScript(template: String, config: CapExConfigUI, overrideDate: Date? = nil, streamOutput: Bool = false) async throws -> String {
     guard !template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw SubmissionError.emptyScript
     }
-    
+
     isRunning = true
     lastError = nil
+    lastOutput = ""
     defer { isRunning = false }
-    
+
     // Substitute placeholders
     let substituted = await substitutePlaceholders(template: template, config: config, overrideDate: overrideDate)
     logger.info("Executing script: \(substituted)")
-    
-    // Execute via /bin/sh
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = ["-c", substituted]
-    
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    
+
     do {
-      try process.run()
-      process.waitUntilExit()
-      
-      let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-      let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-      
-      let stdout = String(data: outputData, encoding: .utf8) ?? ""
-      let stderr = String(data: errorData, encoding: .utf8) ?? ""
-      
-      if process.terminationStatus != 0 {
-        let message = "Exit code \(process.terminationStatus): \(stderr)"
-        lastError = message
-        lastOutput = stdout
-        logger.error("Script failed: \(message)")
-        throw SubmissionError.scriptFailed(exitCode: Int(process.terminationStatus), stderr: stderr)
+      let result = try await runProcess(script: substituted, streamOutput: streamOutput)
+
+      if !streamOutput {
+        lastOutput = result.stdout
       }
-      
-      lastOutput = stdout
+
+      if result.exitCode != 0 {
+        lastOutput = result.stdout
+        let message = "Exit code \(result.exitCode): \(result.stderr)"
+        lastError = message
+        logger.error("Script failed: \(message)")
+        throw SubmissionError.scriptFailed(exitCode: result.exitCode, stderr: result.stderr)
+      }
+
       logger.info("Script completed successfully")
-      return stdout
-      
+      return result.stdout
+
     } catch let error as SubmissionError {
       throw error
     } catch {
@@ -124,6 +112,74 @@ final class CapExSubmissionService: ObservableObject {
       lastError = message
       logger.error("Script execution error: \(message)")
       throw SubmissionError.executionFailed(error)
+    }
+  }
+
+  /// Result of a process execution.
+  private struct ProcessResult {
+    let stdout: String
+    let stderr: String
+    let exitCode: Int
+  }
+
+  /// Runs a script via /bin/sh without blocking the main actor.
+  /// Uses `terminationHandler` for non-blocking completion and optionally
+  /// `readabilityHandler` for real-time output streaming.
+  private func runProcess(script: String, streamOutput: Bool) async throws -> ProcessResult {
+    try await withCheckedThrowingContinuation { continuation in
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/bin/sh")
+      process.arguments = ["-c", script]
+
+      let outputPipe = Pipe()
+      let errorPipe = Pipe()
+      process.standardOutput = outputPipe
+      process.standardError = errorPipe
+
+      let accumulator = OutputAccumulator()
+
+      if streamOutput {
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+          let data = handle.availableData
+          guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+          accumulator.append(text)
+          Task { @MainActor [weak self] in
+            self?.lastOutput += text
+          }
+        }
+      }
+
+      process.terminationHandler = { [weak self] proc in
+        // Stop streaming handler before reading remaining data
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+
+        // Read any remaining data from pipes
+        let remainingData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let remainingText = String(data: remainingData, encoding: .utf8) ?? ""
+
+        let stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+
+        let stdout: String
+        if streamOutput {
+          stdout = accumulator.finalize(remaining: remainingText)
+          if !remainingText.isEmpty {
+            Task { @MainActor [weak self] in
+              self?.lastOutput += remainingText
+            }
+          }
+        } else {
+          stdout = remainingText
+        }
+
+        continuation.resume(returning: ProcessResult(stdout: stdout, stderr: stderr, exitCode: Int(proc.terminationStatus)))
+      }
+
+      do {
+        try process.run()
+      } catch {
+        continuation.resume(throwing: SubmissionError.executionFailed(error))
+      }
     }
   }
   
@@ -346,6 +402,28 @@ final class CapExSubmissionService: ObservableObject {
           return String(format: "DAY-%04d-%02d-%02d", year, month, day)
       }
       return "DAY-UNKNOWN"
+  }
+}
+
+// MARK: - Output Accumulator
+
+/// Thread-safe accumulator for collecting streamed process output from background callbacks.
+private final class OutputAccumulator: @unchecked Sendable {
+  private let lock = NSLock()
+  private var buffer = ""
+
+  func append(_ text: String) {
+    lock.lock()
+    buffer += text
+    lock.unlock()
+  }
+
+  func finalize(remaining: String) -> String {
+    lock.lock()
+    buffer += remaining
+    let result = buffer
+    lock.unlock()
+    return result
   }
 }
 
