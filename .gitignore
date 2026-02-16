@@ -1,6 +1,8 @@
 # macOS
 .DS_Store
 
+connectedware-time-booking/*
+
 # Xcode
 build/
 DerivedData/
