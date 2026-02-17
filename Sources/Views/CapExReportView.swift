@@ -72,9 +72,9 @@ struct CapExReportView: View {
       }
     }
     .frame(minWidth: 600, minHeight: 400)
-    .task(id: currentDate) { await refresh() }
-    .task(id: viewMode) { await refresh() }
-    .task(id: appState.capExConfig) { await refresh() }
+    .task(id: RefreshTrigger(date: currentDate, mode: viewMode, config: appState.capExConfig)) {
+      await refresh()
+    }
   }
   
   @ViewBuilder
@@ -320,5 +320,13 @@ struct CapExReportView: View {
       let pasteboard = NSPasteboard.general
       pasteboard.clearContents()
       pasteboard.setString(text, forType: .string)
+  }
+
+  /// Groups all values that should trigger a recalculation into a single Equatable key,
+  /// so only one `.task(id:)` modifier is needed instead of three separate ones.
+  private struct RefreshTrigger: Equatable {
+    let date: Date
+    let mode: ViewMode
+    let config: CapExConfigUI
   }
 }

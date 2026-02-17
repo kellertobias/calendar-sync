@@ -95,6 +95,7 @@ struct CalendarSyncApp: App {
           // Load syncs and settings from SwiftData only once on first launch into this window.
           await loadSyncsFromPersistenceIfNeeded()
           await loadAppSettingsFromPersistenceIfNeeded()
+          await loadCapExConfigFromPersistenceIfNeeded()
           schedulerHolder.scheduler(
             coordinator: coordinatorHolder.coordinator(
               modelContext: persistence.container.mainContext), appState: appState
@@ -117,6 +118,7 @@ struct CalendarSyncApp: App {
           appState.availableCalendars = calendars.calendars
           await loadSyncsFromPersistenceIfNeeded()
           await loadAppSettingsFromPersistenceIfNeeded()
+          await loadCapExConfigFromPersistenceIfNeeded()
           schedulerHolder.scheduler(
             coordinator: coordinatorHolder.coordinator(
               modelContext: persistence.container.mainContext), appState: appState
@@ -157,11 +159,13 @@ struct CalendarSyncApp: App {
         CapExReportView()
             .environmentObject(appState)
             .environmentObject(calendars)
+            .modelContainer(persistence.container)
             .task {
                 calendars.reload(authorized: eventKitAuth.hasReadAccess)
                 appState.availableCalendars = calendars.calendars
                 await loadSyncsFromPersistenceIfNeeded()
                 await loadAppSettingsFromPersistenceIfNeeded()
+                await loadCapExConfigFromPersistenceIfNeeded()
             }
     }
 

@@ -6,8 +6,10 @@ import OSLog
 /// Approaches:
 /// 1. Start with "Working Time" events as the base set of available time slots.
 /// 2. Subtract time slots occupied by events in "Exclusion" calendars (matching specific rules).
-@MainActor
-final class CapExEngine {
+///
+/// Not bound to @MainActor so that EventKit queries run on a background thread,
+/// keeping the UI responsive during calculation.
+final class CapExEngine: @unchecked Sendable {
   struct DateRange: Equatable {
     let start: Date
     let end: Date

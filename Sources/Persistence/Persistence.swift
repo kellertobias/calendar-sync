@@ -25,7 +25,19 @@ final class Persistence: ObservableObject {
     do {
       container = try ModelContainer(for: schema, configurations: [config])
     } catch {
-      fatalError("Failed to create ModelContainer: \(error)")
+      // Schema changed — delete the incompatible store and recreate.
+      if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+        let storeDir = appSupport.appendingPathComponent(Bundle.main.bundleIdentifier ?? "CalendarSync")
+        let storeFiles = ["default.store", "default.store-shm", "default.store-wal"]
+        for file in storeFiles {
+          try? FileManager.default.removeItem(at: storeDir.appendingPathComponent(file))
+        }
+      }
+      do {
+        container = try ModelContainer(for: schema, configurations: [config])
+      } catch {
+        fatalError("Failed to create ModelContainer after store reset: \(error)")
+      }
     }
   }
 }
